@@ -49,6 +49,16 @@ fn is_waiting_for_input(task: &crate::task::Task) -> bool {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+    // Pre-compute max column widths for alignment
+    let max_name_len = app.tasks.iter().map(|t| t.name.len()).max().unwrap_or(0);
+    let max_upstream_len = app
+        .tasks
+        .iter()
+        .map(|t| "(upstream: )".len() + t.upstream.len())
+        .max()
+        .unwrap_or(0);
+    let max_status_len = 7; // "running", "waiting", "stopped" are all 7 chars
+
     let items: Vec<ListItem> = app
         .tasks
         .iter()
@@ -70,15 +80,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 None => String::new(),
             };
 
+            let upstream_str = format!("(upstream: {})", task.upstream);
+
             let mut spans = vec![
                 Span::styled(icon, Style::default().fg(icon_color)),
-                Span::raw(&task.name),
+                Span::raw(format!("{:<width$}", task.name, width = max_name_len)),
                 Span::styled(
-                    format!("  (upstream: {})", task.upstream),
+                    format!("  {:<width$}", upstream_str, width = max_upstream_len),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(
-                    format!("  {status_text}"),
+                    format!("  {:<width$}", status_text, width = max_status_len),
                     Style::default().fg(icon_color),
                 ),
             ];

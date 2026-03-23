@@ -103,24 +103,34 @@ impl Tui {
 
     /// Main event loop
     pub async fn run(&mut self, app: &mut App) -> anyhow::Result<()> {
+        let mut refresh_interval = tokio::time::interval(Duration::from_secs(5));
+        // Don't pile up ticks when the loop is busy
+        refresh_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         loop {
             self.terminal.draw(|frame| {
                 ui::render(frame, app);
             })?;
 
-            match self.event_rx.recv().await {
-                Some(AppEvent::SquashMerge { name, upstream }) => {
-                    // Squash merge needs $EDITOR — leave alternate screen temporarily
-                    let result = self.execute_squash_merge(&app.repo_root, &app.git_common_dir, &name, &upstream);
-                    if let Err(e) = result {
-                        app.last_error = Some(format!("Squash merge failed: {e}"));
+            tokio::select! {
+                event = self.event_rx.recv() => {
+                    match event {
+                        Some(AppEvent::SquashMerge { name, upstream }) => {
+                            let result = self.execute_squash_merge(&app.repo_root, &app.git_common_dir, &name, &upstream);
+                            if let Err(e) = result {
+                                app.last_error = Some(format!("Squash merge failed: {e}"));
+                            }
+                            app.refresh_commits_ahead();
+                        }
+                        Some(event) => {
+                            app.handle_event(event)?;
+                        }
+                        None => break,
                     }
+                }
+                _ = refresh_interval.tick() => {
                     app.refresh_commits_ahead();
                 }
-                Some(event) => {
-                    app.handle_event(event)?;
-                }
-                None => break,
             }
 
             if app.should_quit {

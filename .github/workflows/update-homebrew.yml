@@ -1,0 +1,33 @@
+name: Update Homebrew Formula
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-copse
+        uses: actions/checkout@v4
+        with:
+          repository: daiwahome/homebrew-copse
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update Formula tag
+        run: |
+          sed -i 's|tag: "v[^"]*"|tag: "${{ github.ref_name }}"|' Formula/copse.rb
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          commit-message: "copse ${{ steps.version.outputs.version }}"
+          title: "copse ${{ steps.version.outputs.version }}"
+          body: "Automated update from [copse ${{ github.ref_name }}](https://github.com/daiwahome/copse/releases/tag/${{ github.ref_name }})"
+          branch: "update-${{ github.ref_name }}"

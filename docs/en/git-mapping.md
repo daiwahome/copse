@@ -1,0 +1,64 @@
+# Git Mapping
+
+copse is designed to be git-native. Every concept and operation maps directly to standard git commands. You can always bypass copse and work with git directly — copse will pick up the changes on next launch or refresh (`Ctrl-r`).
+
+## Concepts → Git Primitives
+
+| copse concept   | git primitive                                              |
+|-----------------|------------------------------------------------------------|
+| Task            | Branch `copse/<name>` + worktree                           |
+| Upstream        | Tracking branch (`git branch --set-upstream-to`)           |
+| Task status     | Runtime only (not stored in git)                           |
+| Commits ahead   | `git rev-list --count <upstream>..<branch>`                |
+
+## Operations → Git Commands
+
+**Create task**
+```sh
+git worktree add -b copse/<name> <path> <upstream>
+git branch --set-upstream-to=<upstream> copse/<name>
+```
+
+**Resume task** (if worktree was removed)
+```sh
+git worktree add <path> copse/<name>
+```
+
+**Delete task**
+```sh
+git worktree remove --force <path>
+git branch -D copse/<name>
+```
+
+**Merge (fast-forward)**
+```sh
+git update-ref refs/heads/<upstream> <task-commit>
+```
+
+**Merge (squash)** (inside task worktree)
+```sh
+git reset --soft <upstream>
+git commit
+git update-ref refs/heads/<upstream> HEAD
+```
+
+**Sync from upstream**
+```sh
+git reset --hard <upstream>   # inside worktree
+```
+
+**Read upstream**
+```sh
+git for-each-ref --format='%(upstream:short)' refs/heads/copse/<name>
+```
+
+**Change upstream**
+```sh
+git branch --set-upstream-to=<new-upstream> copse/<name>
+```
+
+**List tasks**
+```sh
+git branch --list 'copse/*'
+```
+

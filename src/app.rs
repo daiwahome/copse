@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
+    config::Config,
     event::{AppEvent, TaskId},
     task::Task,
 };
@@ -41,6 +42,7 @@ pub struct App {
     /// Used to place copse-worktrees/ in a stable location even when
     /// copse itself is running from inside a worktree.
     pub git_common_dir: std::path::PathBuf,
+    pub config: Config,
     pub event_tx: tokio::sync::mpsc::Sender<AppEvent>,
     /// Error message to display in the status bar (cleared on next keypress)
     pub last_error: Option<String>,
@@ -50,6 +52,7 @@ impl App {
     pub fn new(
         repo_root: std::path::PathBuf,
         git_common_dir: std::path::PathBuf,
+        config: Config,
         event_tx: tokio::sync::mpsc::Sender<AppEvent>,
     ) -> Self {
         Self {
@@ -60,6 +63,7 @@ impl App {
             should_quit: false,
             repo_root,
             git_common_dir,
+            config,
             event_tx,
             last_error: None,
         }
@@ -350,11 +354,12 @@ impl App {
         let tx = self.event_tx.clone();
         let repo_root = self.repo_root.clone();
         let git_common_dir = self.git_common_dir.clone();
+        let config = self.config.clone();
         let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
         let content_rows = rows.saturating_sub(1); // reserve 1 row for status bar
         let event_tx = self.event_tx.clone();
         tokio::spawn(async move {
-            let result = Task::spawn(id, name, upstream, has_run, repo_root, git_common_dir, content_rows, cols, tx)
+            let result = Task::spawn(id, name, upstream, has_run, repo_root, git_common_dir, config, content_rows, cols, tx)
                 .await
                 .map_err(|e| format!("Failed to resume task: {e}"));
             let _ = event_tx

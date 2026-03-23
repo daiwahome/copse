@@ -7,6 +7,7 @@ use std::{
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use tokio::{sync::mpsc, task::JoinHandle};
 
+use crate::config::Config;
 use crate::event::{AppEvent, TaskId};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -180,6 +181,51 @@ impl Task {
         .await?
     }
 
+    /// Write `.claude/settings.local.json` into the worktree based on config.
+    /// Merges template keys into existing settings, preserving user customizations.
+    fn setup_claude_settings(worktree_path: &Path, config: &Config) -> anyhow::Result<()> {
+        if !config.auto_commit && !config.auto_permissions {
+            return Ok(());
+        }
+
+        let claude_dir = worktree_path.join(".claude");
+        std::fs::create_dir_all(&claude_dir)?;
+
+        let settings_path = claude_dir.join("settings.local.json");
+
+        let template: serde_json::Value =
+            serde_json::from_str(include_str!("templates/settings.local.json"))?;
+
+        let mut settings = if settings_path.exists() {
+            let content = std::fs::read_to_string(&settings_path)?;
+            serde_json::from_str::<serde_json::Value>(&content)
+                .unwrap_or_else(|_| serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
+
+        // Merge template keys into existing settings (existing keys take priority)
+        if let (Some(target), Some(source)) = (settings.as_object_mut(), template.as_object()) {
+            if config.auto_commit {
+                if let Some(hooks) = source.get("hooks") {
+                    target.entry("hooks").or_insert_with(|| hooks.clone());
+                }
+            }
+            if config.auto_permissions {
+                if let Some(permissions) = source.get("permissions") {
+                    target.entry("permissions").or_insert_with(|| permissions.clone());
+                }
+            }
+        }
+
+        std::fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&settings)? + "\n",
+        )?;
+
+        Ok(())
+    }
+
     /// Read the upstream (tracking branch) for a task branch from git.
     pub fn load_upstream(repo_root: &Path, name: &str) -> Option<String> {
         let branch = Self::branch_name(name);
@@ -307,6 +353,7 @@ impl Task {
         has_run: bool,
         repo_root: PathBuf,
         git_common_dir: PathBuf,
+        config: Config,
         rows: u16,
         cols: u16,
         event_tx: mpsc::Sender<AppEvent>,
@@ -314,6 +361,11 @@ impl Task {
 
         // Ensure the worktree (and branch) exist before launching claude
         let worktree_path = Self::ensure_worktree(&repo_root, &git_common_dir, &name, &upstream).await?;
+
+        // Set up .claude/settings.local.json based on config
+        let wp = worktree_path.clone();
+        let permission_mode = config.permission_mode.clone();
+        tokio::task::spawn_blocking(move || Self::setup_claude_settings(&wp, &config)).await??;
 
         let pty_system = NativePtySystem::default();
         let pair = pty_system.openpty(PtySize {
@@ -327,6 +379,7 @@ impl Task {
         if has_run {
             cmd.arg("--continue");
         }
+        cmd.args(["--permission-mode", &permission_mode]);
         cmd.env("TERM", "xterm-256color");
         // Run claude inside the worktree directory so it picks up the branch
         cmd.cwd(&worktree_path);

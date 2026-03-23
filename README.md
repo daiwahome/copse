@@ -56,6 +56,7 @@ For key bindings and view details, see [Views](docs/en/views.md).
 
 ## Documentation
 
+- [Configuration](docs/en/configuration.md) — Settings, auto-commit, and auto-permissions
 - [Git Mapping](docs/en/git-mapping.md) — How copse concepts map to git commands
 - [Views](docs/en/views.md) — Detailed view descriptions and key bindings
 - [Design Decisions](docs/en/design-decisions.md) — Design choices and rationale
@@ -70,7 +71,10 @@ copse/src
  ├── app.rs       Application state (tasks, mode, key handling)
  ├── task.rs      Manages git worktrees, spawns `claude` in a PTY
  │                Reads PTY output → vt100 parser → screen buffer
+ ├── config.rs    Configuration (confy, ~/.config/copse/)
  ├── event.rs     AppEvent enum (key, task lifecycle, resize)
+ ├── templates/
+ │    └── settings.local.json   Claude Code settings template
  └── ui/
       ├── mod.rs     Layout, status bars, dialogs
       ├── list.rs    Task list panel

@@ -56,6 +56,7 @@ copse
 
 ## ドキュメント
 
+- [設定](configuration.md) — 設定ファイル、自動コミット、自動承認
 - [Git マッピング](git-mapping.md) — copse の概念と git コマンドの対応
 - [ビュー](views.md) — ビューの詳細説明とキーバインド
 - [設計判断](design-decisions.md) — 設計上の判断とその理由
@@ -70,7 +71,10 @@ copse/src
  ├── app.rs       アプリケーション状態 (タスク、モード、キー処理)
  ├── task.rs      git worktree 管理、PTY で `claude` を起動
  │                PTY 出力 → vt100 パーサー → スクリーンバッファ
+ ├── config.rs    設定管理 (confy, ~/.config/copse/)
  ├── event.rs     AppEvent enum (キー、タスクライフサイクル、リサイズ)
+ ├── templates/
+ │    └── settings.local.json   Claude Code 設定テンプレート
  └── ui/
       ├── mod.rs     レイアウト、ステータスバー、ダイアログ
       ├── list.rs    タスクリストパネル

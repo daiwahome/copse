@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git add -A && git diff --cached --quiet || git commit -m 'copse auto-commit'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(basename *)",
+      "Bash(cat *)",
+      "Bash(cut *)",
+      "Bash(date *)",
+      "Bash(diff *)",
+      "Bash(dirname *)",
+      "Bash(echo *)",
+      "Bash(file *)",
+      "Bash(find *)",
+      "Bash(git *)",
+      "Bash(grep *)",
+      "Bash(head *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(pwd *)",
+      "Bash(rg *)",
+      "Bash(sort *)",
+      "Bash(tail *)",
+      "Bash(tree *)",
+      "Bash(uniq *)",
+      "Bash(wc *)",
+      "Bash(which *)",
+      "Edit",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Write"
+    ]
+  }
+}

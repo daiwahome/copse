@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod event;
 mod task;
 mod tui;
@@ -12,12 +13,19 @@ use tui::Tui;
 
 #[derive(Parser)]
 #[command(name = "copse", version, about = "TUI for running Claude Code tasks in parallel using git worktrees")]
-struct Cli {}
+struct Cli {
+    /// Generate the default config file at ~/.config/copse/default-config.toml
+    #[arg(long)]
+    init: bool,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Parse CLI arguments (handles --version / -v / --help automatically)
-    Cli::parse();
+    let cli = Cli::parse();
+
+    if cli.init {
+        return config::Config::init();
+    }
 
     // Ignore SIGTSTP so Ctrl+Z inside copse doesn't suspend the process.
     unsafe {
@@ -32,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
     // (avoids path issues when copse itself runs inside a worktree).
     let repo_root = find_repo_root()?;
     let git_common_dir = find_git_common_dir()?;
+    let config = config::Config::load()?;
 
     // Restore the terminal even on panic
     let default_hook = std::panic::take_hook();
@@ -47,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut tui = Tui::new()?;
     let event_tx = tui.event_sender();
-    let mut app = App::new(repo_root.clone(), git_common_dir.clone(), event_tx);
+    let mut app = App::new(repo_root.clone(), git_common_dir.clone(), config, event_tx);
 
     // Populate existing copse/* branches as Stopped tasks on startup
     let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));

@@ -32,14 +32,14 @@ git branch -D copse/<name>
 
 **マージ (fast-forward)**
 ```sh
-git update-ref refs/heads/<upstream> <task-commit>
+git -C <upstream-worktree> merge --ff-only <task-commit>
 ```
 
-**マージ (squash)** (タスクの worktree 内で実行)
+**マージ (squash)** (upstream の worktree 内で実行)
 ```sh
-git reset --soft <upstream>
+git merge --squash copse/<name>
 git commit
-git update-ref refs/heads/<upstream> HEAD
+git -C <task-worktree> reset --hard <upstream>
 ```
 
 **upstream から同期**

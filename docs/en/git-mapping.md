@@ -32,14 +32,14 @@ git branch -D copse/<name>
 
 **Merge (fast-forward)**
 ```sh
-git update-ref refs/heads/<upstream> <task-commit>
+git -C <upstream-worktree> merge --ff-only <task-commit>
 ```
 
-**Merge (squash)** (inside task worktree)
+**Merge (squash)** (inside upstream worktree)
 ```sh
-git reset --soft <upstream>
+git merge --squash copse/<name>
 git commit
-git update-ref refs/heads/<upstream> HEAD
+git -C <task-worktree> reset --hard <upstream>
 ```
 
 **Sync from upstream**

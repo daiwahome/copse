@@ -140,12 +140,13 @@ impl Tui {
         Ok(())
     }
 
-    /// Leave alternate screen, squash commits in the task worktree, then
-    /// fast-forward upstream via update-ref.
+    /// Leave alternate screen, squash-merge a task branch into upstream,
+    /// then align the task branch to upstream.
     ///
-    /// Approach: `git reset --soft <upstream>` collapses all task commits into
-    /// the staging area, then `git commit` creates a single squash commit on
-    /// top of upstream. Finally `update-ref` advances the upstream branch.
+    /// Builds a rebase -i style commit message template, runs
+    /// `git merge --squash` + `git commit` (with $EDITOR) in the upstream
+    /// worktree, then `git reset --hard` in the task worktree so both
+    /// branches match.
     fn execute_squash_merge(
         &mut self,
         repo_root: &std::path::Path,
@@ -156,10 +157,8 @@ impl Tui {
         use crate::task::Task;
 
         let branch = Task::branch_name(name);
-        let worktree_path = Task::worktree_path_for(
-            &git_common_dir.to_path_buf(),
-            name,
-        );
+        let upstream_wt = Task::find_branch_worktree(repo_root, upstream)?;
+        let task_wt = Task::worktree_path_for(&git_common_dir.to_path_buf(), name);
 
         // Pause input reader so it doesn't consume stdin during $EDITOR
         self.input_paused.store(true, Ordering::Relaxed);
@@ -169,7 +168,7 @@ impl Tui {
         execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
 
         let result = (|| -> anyhow::Result<()> {
-            // Build commit message template (rebase -i squash style with *)
+            // Build commit message template (rebase -i squash style)
             let log_output = std::process::Command::new("git")
                 .args(["log", "--reverse", "--format=----%n%B", &format!("{upstream}..{branch}")])
                 .current_dir(repo_root)
@@ -196,13 +195,13 @@ impl Tui {
                 ));
             }
 
-            // Reset task branch onto upstream (all changes become staged)
+            // Stage all task branch changes onto upstream
             let out = std::process::Command::new("git")
-                .args(["reset", "--soft", upstream])
-                .current_dir(&worktree_path)
+                .args(["merge", "--squash", &branch])
+                .current_dir(&upstream_wt)
                 .output()?;
             if !out.status.success() {
-                anyhow::bail!("reset --soft failed: {}", String::from_utf8_lossy(&out.stderr));
+                anyhow::bail!("merge --squash failed: {}", String::from_utf8_lossy(&out.stderr));
             }
 
             // Write template and commit with $EDITOR
@@ -211,7 +210,7 @@ impl Tui {
 
             let commit_status = std::process::Command::new("git")
                 .args(["commit", "-e", "-F", tmp.to_str().unwrap_or(""), "--cleanup=strip"])
-                .current_dir(&worktree_path)
+                .current_dir(&upstream_wt)
                 .stdin(std::process::Stdio::inherit())
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
@@ -220,38 +219,21 @@ impl Tui {
             let _ = std::fs::remove_file(&tmp);
 
             if !commit_status.map(|s| s.success()).unwrap_or(false) {
-                // Commit was aborted — restore the branch to its original position
-                let recovery = std::process::Command::new("git")
-                    .args(["reset", "--soft", &branch])
-                    .current_dir(&worktree_path)
+                // Commit was aborted — clean up staged changes in upstream worktree
+                let _ = std::process::Command::new("git")
+                    .args(["reset", "--hard"])
+                    .current_dir(&upstream_wt)
                     .output();
-                match recovery {
-                    Ok(out) if out.status.success() => {
-                        anyhow::bail!("commit aborted");
-                    }
-                    _ => {
-                        anyhow::bail!(
-                            "commit aborted and recovery failed — run `git reset --soft {}` \
-                             in the task worktree to restore the branch",
-                            branch
-                        );
-                    }
-                }
+                anyhow::bail!("commit aborted");
             }
 
-            // Fast-forward upstream to the new squash commit
-            let head = std::process::Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(&worktree_path)
-                .output()?;
-            let commit = String::from_utf8_lossy(&head.stdout).trim().to_string();
-
+            // Align task branch to upstream
             let out = std::process::Command::new("git")
-                .args(["update-ref", &format!("refs/heads/{upstream}"), &commit])
-                .current_dir(repo_root)
+                .args(["reset", "--hard", upstream])
+                .current_dir(&task_wt)
                 .output()?;
             if !out.status.success() {
-                anyhow::bail!("update-ref failed: {}", String::from_utf8_lossy(&out.stderr));
+                anyhow::bail!("reset --hard failed: {}", String::from_utf8_lossy(&out.stderr));
             }
 
             Ok(())

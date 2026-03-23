@@ -477,54 +477,9 @@ impl Task {
     }
 
     /// Fast-forward merge: advance upstream to the task branch's HEAD.
-    /// Uses update-ref to avoid checking out the upstream branch in the main worktree.
     pub fn merge_ff(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<()> {
         let branch = Self::branch_name(name);
-
-        // Resolve both refs
-        let task_commit = {
-            let out = std::process::Command::new("git")
-                .args(["rev-parse", &branch])
-                .current_dir(repo_root)
-                .output()?;
-            if !out.status.success() {
-                anyhow::bail!("Could not resolve {branch}");
-            }
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-
-        let upstream_commit = {
-            let out = std::process::Command::new("git")
-                .args(["rev-parse", upstream])
-                .current_dir(repo_root)
-                .output()?;
-            if !out.status.success() {
-                anyhow::bail!("Could not resolve {upstream}");
-            }
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-
-        // Check that upstream is an ancestor of task branch (ff-able)
-        let out = std::process::Command::new("git")
-            .args(["merge-base", "--is-ancestor", &upstream_commit, &task_commit])
-            .current_dir(repo_root)
-            .output()?;
-        if !out.status.success() {
-            anyhow::bail!("Cannot fast-forward: {upstream} is not an ancestor of {branch}");
-        }
-
-        // Update the upstream ref to point to the task commit
-        let out = std::process::Command::new("git")
-            .args(["update-ref", &format!("refs/heads/{upstream}"), &task_commit])
-            .current_dir(repo_root)
-            .output()?;
-        if !out.status.success() {
-            anyhow::bail!(
-                "update-ref failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-        }
-
+        Self::advance_branch(repo_root, upstream, &branch)?;
         Ok(())
     }
 
@@ -586,6 +541,56 @@ impl Task {
             .unwrap_or_else(|e| e.into_inner())
             .screen_mut()
             .set_size(rows, cols);
+        Ok(())
+    }
+
+    /// Find the worktree path where the given branch is checked out.
+    pub fn find_branch_worktree(repo_root: &Path, branch: &str) -> anyhow::Result<PathBuf> {
+        let target_ref = format!("refs/heads/{branch}");
+
+        let output = std::process::Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(repo_root)
+            .output()?;
+        let listing = String::from_utf8_lossy(&output.stdout);
+
+        let mut worktree_path: Option<PathBuf> = None;
+        let mut current_path: Option<PathBuf> = None;
+
+        for line in listing.lines() {
+            if let Some(p) = line.strip_prefix("worktree ") {
+                current_path = Some(PathBuf::from(p));
+            } else if let Some(b) = line.strip_prefix("branch ") {
+                if b == target_ref {
+                    worktree_path = current_path.take();
+                }
+            } else if line.is_empty() {
+                current_path = None;
+            }
+        }
+
+        worktree_path.ok_or_else(|| {
+            anyhow::anyhow!("branch '{branch}' is not checked out in any worktree")
+        })
+    }
+
+    /// Advance a branch to the given commit using `merge --ff-only`.
+    /// The branch must be checked out in a worktree so that the working tree
+    /// and index are updated atomically along with the ref.
+    pub fn advance_branch(repo_root: &Path, branch: &str, commit: &str) -> anyhow::Result<()> {
+        let wt_path = Self::find_branch_worktree(repo_root, branch)?;
+
+        let out = std::process::Command::new("git")
+            .args(["merge", "--ff-only", commit])
+            .current_dir(&wt_path)
+            .output()?;
+        if !out.status.success() {
+            anyhow::bail!(
+                "merge --ff-only failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+
         Ok(())
     }
 

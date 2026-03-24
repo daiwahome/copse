@@ -190,7 +190,7 @@ impl Tui {
         disable_raw_mode()?;
         execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
 
-        let result = (|| -> anyhow::Result<()> {
+        let mut result = (|| -> anyhow::Result<()> {
             // Build commit message template (rebase -i squash style)
             let log_output = std::process::Command::new("git")
                 .args(["log", "--reverse", "--format=----%n%B", &format!("{upstream}..{branch}")])
@@ -250,21 +250,30 @@ impl Tui {
                 anyhow::bail!("commit aborted");
             }
 
-            // Align task branch to upstream
-            let out = std::process::Command::new("git")
-                .args(["reset", "--hard", upstream])
-                .current_dir(&task_wt)
-                .output()?;
-            if !out.status.success() {
-                anyhow::bail!("reset --hard failed: {}", String::from_utf8_lossy(&out.stderr));
-            }
-
             Ok(())
         })();
 
         // Always switch back to task branch if we borrowed the task worktree
         if switched {
             let _ = Task::switch_branch(&task_wt, &branch);
+        }
+
+        // Align task branch to upstream (must happen after switch-back so
+        // the reset moves the task branch, not the upstream branch).
+        if result.is_ok() {
+            let out = std::process::Command::new("git")
+                .args(["reset", "--hard", upstream])
+                .current_dir(&task_wt)
+                .output();
+            match out {
+                Ok(o) if !o.status.success() => {
+                    result = Err(anyhow::anyhow!("reset --hard failed: {}", String::from_utf8_lossy(&o.stderr)));
+                }
+                Err(e) => {
+                    result = Err(anyhow::anyhow!("reset --hard failed: {e}"));
+                }
+                _ => {}
+            }
         }
 
         // Return to alternate screen and resume input reader

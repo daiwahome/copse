@@ -885,7 +885,7 @@ impl App {
             }
             _ => cols,
         };
-        for task in &mut self.tasks {
+        if let Some(task) = self.focused_task_mut() {
             let _ = task.resize(content_rows, agent_cols);
         }
     }
@@ -1012,6 +1012,7 @@ fn key_to_bytes(key: KeyEvent) -> Vec<u8> {
         KeyCode::End => b"\x1b[F".to_vec(),
         KeyCode::PageUp => b"\x1b[5~".to_vec(),
         KeyCode::PageDown => b"\x1b[6~".to_vec(),
+        KeyCode::BackTab => b"\x1b[Z".to_vec(),
         KeyCode::Esc => b"\x1b".to_vec(),
         KeyCode::F(n) => match n {
             1 => b"\x1bOP".to_vec(),

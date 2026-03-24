@@ -10,6 +10,8 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use crate::config::Config;
 use crate::event::{AppEvent, TaskId};
 
+const SCROLLBACK_LEN: usize = 10_000;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TaskStatus {
     Running,
@@ -31,6 +33,8 @@ pub struct Task {
     pub worktree_path: PathBuf,
     /// Parses ANSI sequences and holds the screen buffer
     pub parser: Arc<Mutex<vt100::Parser>>,
+    /// Scrollback offset for the agent view (0 = live view)
+    pub scroll_offset: usize,
     /// Write end of the PTY (sends keyboard input). None while Stopped.
     writer: Option<Box<dyn Write + Send>>,
     /// Background task that reads PTY output. None while Stopped.
@@ -335,7 +339,8 @@ impl Task {
             status: TaskStatus::Stopped,
             has_run,
             commits_ahead,
-            parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0))),
+            parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
+            scroll_offset: 0,
             writer: None,
             _reader_task: None,
             master: None,
@@ -393,7 +398,7 @@ impl Task {
         // Obtain a ChildKiller for later termination
         let killer = child.clone_killer();
 
-        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN)));
         let parser_clone = Arc::clone(&parser);
         let event_tx_clone = event_tx.clone();
 
@@ -436,6 +441,7 @@ impl Task {
             commits_ahead: None,
             worktree_path,
             parser,
+            scroll_offset: 0,
             writer: Some(writer),
             _reader_task: Some(reader_task),
             master: Some(pair.master),

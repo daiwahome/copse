@@ -172,8 +172,15 @@ impl Tui {
         use crate::task::Task;
 
         let branch = Task::branch_name(name);
-        let upstream_wt = Task::find_branch_worktree(repo_root, upstream)?;
         let task_wt = Task::worktree_path_for(&git_common_dir.to_path_buf(), name);
+        let (upstream_wt, switched) = match Task::find_branch_worktree(repo_root, upstream) {
+            Ok(wt) => (wt, false),
+            Err(_) => {
+                // Upstream not checked out anywhere; temporarily switch the task worktree
+                Task::switch_branch(&task_wt, upstream)?;
+                (task_wt.clone(), true)
+            }
+        };
 
         // Pause input reader so it doesn't consume stdin during $EDITOR
         self.input_paused.store(true, Ordering::Relaxed);
@@ -253,6 +260,11 @@ impl Tui {
 
             Ok(())
         })();
+
+        // Always switch back to task branch if we borrowed the task worktree
+        if switched {
+            let _ = Task::switch_branch(&task_wt, &branch);
+        }
 
         // Return to alternate screen and resume input reader
         enable_raw_mode()?;

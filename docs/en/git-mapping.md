@@ -32,13 +32,23 @@ git branch -D copse/<name>
 
 **Merge (fast-forward)**
 ```sh
+# If upstream is checked out in a worktree:
 git -C <upstream-worktree> merge --ff-only <task-commit>
+# If upstream is not checked out anywhere:
+git branch -f <upstream> <task-commit>
 ```
 
-**Merge (squash)** (inside upstream worktree)
+**Merge (squash)**
 ```sh
+# If upstream is checked out in a worktree, run inside that worktree:
 git merge --squash copse/<name>
 git commit
+git -C <task-worktree> reset --hard <upstream>
+# If upstream is not checked out, temporarily switch the task worktree:
+git -C <task-worktree> switch <upstream>
+git -C <task-worktree> merge --squash copse/<name>
+git -C <task-worktree> commit
+git -C <task-worktree> switch copse/<name>
 git -C <task-worktree> reset --hard <upstream>
 ```
 

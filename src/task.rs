@@ -588,23 +588,53 @@ impl Task {
         })
     }
 
-    /// Advance a branch to the given commit using `merge --ff-only`.
-    /// The branch must be checked out in a worktree so that the working tree
-    /// and index are updated atomically along with the ref.
+    /// Advance a branch to the given commit.
+    /// If the branch is checked out in a worktree, uses `merge --ff-only` to
+    /// update the working tree and index atomically.
+    /// Otherwise, moves the branch ref directly with `branch -f`.
     pub fn advance_branch(repo_root: &Path, branch: &str, commit: &str) -> anyhow::Result<()> {
-        let wt_path = Self::find_branch_worktree(repo_root, branch)?;
+        match Self::find_branch_worktree(repo_root, branch) {
+            Ok(wt_path) => {
+                let out = std::process::Command::new("git")
+                    .args(["merge", "--ff-only", commit])
+                    .current_dir(&wt_path)
+                    .output()?;
+                if !out.status.success() {
+                    anyhow::bail!(
+                        "merge --ff-only failed: {}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                }
+            }
+            Err(_) => {
+                let out = std::process::Command::new("git")
+                    .args(["branch", "-f", branch, commit])
+                    .current_dir(repo_root)
+                    .output()?;
+                if !out.status.success() {
+                    anyhow::bail!(
+                        "branch -f failed: {}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                }
+            }
+        }
 
+        Ok(())
+    }
+
+    /// Switch the branch checked out in a worktree.
+    pub fn switch_branch(worktree: &Path, branch: &str) -> anyhow::Result<()> {
         let out = std::process::Command::new("git")
-            .args(["merge", "--ff-only", commit])
-            .current_dir(&wt_path)
+            .args(["switch", branch])
+            .current_dir(worktree)
             .output()?;
         if !out.status.success() {
             anyhow::bail!(
-                "merge --ff-only failed: {}",
+                "switch failed: {}",
                 String::from_utf8_lossy(&out.stderr)
             );
         }
-
         Ok(())
     }
 

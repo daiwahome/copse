@@ -71,6 +71,7 @@ copse/src
  ├── app.rs       アプリケーション状態 (タスク、モード、キー処理)
  ├── task.rs      git worktree 管理、PTY で `claude` を起動
  │                PTY 出力 → vt100 パーサー → スクリーンバッファ
+ ├── diff.rs      Unified diff パーサーと検索
  ├── config.rs    設定管理 (confy, ~/.config/copse/)
  ├── event.rs     AppEvent enum (キー、タスクライフサイクル、リサイズ)
  ├── templates/
@@ -78,6 +79,7 @@ copse/src
  └── ui/
       ├── mod.rs     レイアウト、ステータスバー、ダイアログ
       ├── list.rs    タスクリストパネル
+      ├── diff.rs    Diff view レンダリング
       └── agent.rs   PseudoTerminal ウィジェット (tui-term)
 ```
 

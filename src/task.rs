@@ -46,6 +46,14 @@ pub struct Task {
 }
 
 impl Task {
+    pub fn is_running(&self) -> bool {
+        self.status == TaskStatus::Running
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.status == TaskStatus::Stopped
+    }
+
     /// Derive the worktree path for a given task name.
     /// Worktrees live at `<git_common_dir>/copse-worktrees/<name>`.
     /// Using the common .git dir (not repo_root/.git) ensures the path is

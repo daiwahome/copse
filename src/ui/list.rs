@@ -12,7 +12,7 @@ use crate::{app::App, task::TaskStatus};
 /// Heuristic: scan the last few non-empty rows of the PTY screen for
 /// Claude's prompt character `❯` (U+276F) or `>` at the start of a line.
 fn is_waiting_for_input(task: &crate::task::Task) -> bool {
-    if task.status != TaskStatus::Running {
+    if !task.is_running() {
         return false;
     }
     let screen = task
@@ -48,7 +48,7 @@ fn is_waiting_for_input(task: &crate::task::Task) -> bool {
     false
 }
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     // Pre-compute max column widths for alignment
     let max_name_len = app.tasks.iter().map(|t| t.name.len()).max().unwrap_or(0);
     let max_upstream_len = app
@@ -106,14 +106,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     // tig-style: no border, no highlight symbol — selected row shown by bg color only
+    let highlight = if focused {
+        Style::default()
+            .fg(Color::Indexed(166))
+            .bg(Color::Indexed(234))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Indexed(252))
+            .bg(Color::Indexed(234))
+    };
     let list = List::new(items)
         .block(Block::default())
-        .highlight_style(
-            Style::default()
-                .fg(Color::Indexed(166))
-                .bg(Color::Indexed(234))
-                .add_modifier(Modifier::BOLD),
-        )
+        .highlight_style(highlight)
         .highlight_symbol("");
 
     let mut state = ListState::default();

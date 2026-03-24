@@ -36,3 +36,7 @@ copse uses standard git primitives (branches, tracking branches, worktrees) so t
 ## Why task rename is not supported
 
 Renaming a task would require renaming the git branch (`copse/<name>`) and moving the worktree directory. While both operations are straightforward with `git branch -m` and `git worktree move`, Claude Code's `--continue` session is tied to the worktree path. After a rename, the session history would be lost and a new session would start on resume. Since session continuity is a core feature of copse's task lifecycle, task rename is intentionally not supported.
+
+## Why shell out to `git diff`?
+
+The diff view runs `git diff <upstream>..<branch>` as a subprocess and parses the unified diff output directly. This is the simplest approach and the same method tig uses. It also stays consistent with how copse already interacts with git — all other git operations (`rev-list`, `worktree add`, `branch`, etc.) use `std::process::Command` as well. No additional dependencies (such as `git2` or a diff-parsing crate) are needed.

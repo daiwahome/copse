@@ -10,7 +10,15 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Dialog, Pane, View, ViewLayout};
+use crate::app::{App, ChildView, Dialog, Pane, View, ViewLayout};
+use crate::diff::DiffState;
+
+fn diff_state_mut(view_stack: &mut [ChildView]) -> Option<&mut DiffState> {
+    view_stack.iter_mut().find_map(|v| match v {
+        ChildView::Diff(s) => Some(s),
+        _ => None,
+    })
+}
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     match app.layout() {
@@ -34,8 +42,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Fill(1), Constraint::Length(1)])
                 .split(frame.area());
-            if let Some(state) = app.diff_state_mut() {
-                diff::render(frame, chunks[0], state, true);
+            if let Some(state) = diff_state_mut(&mut app.view_stack) {
+                diff::render(frame, chunks[0], state, true, &app.theme);
             }
             render_diff_status_bar(frame, chunks[1], app, true);
         }
@@ -61,8 +69,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Fill(1), Constraint::Length(1)])
                 .split(frame.area());
-            if let Some(state) = app.diff_state_mut() {
-                diff::render(frame, chunks[0], state, true);
+            if let Some(state) = diff_state_mut(&mut app.view_stack) {
+                diff::render(frame, chunks[0], state, true, &app.theme);
             }
             render_diff_status_bar(frame, chunks[1], app, true);
         }
@@ -173,8 +181,8 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(right_area);
-    if let Some(state) = app.diff_state_mut() {
-        diff::render(frame, right_rows[0], state, focus == Pane::Right);
+    if let Some(state) = diff_state_mut(&mut app.view_stack) {
+        diff::render(frame, right_rows[0], state, focus == Pane::Right, &app.theme);
     }
     render_diff_status_bar(frame, right_rows[1], app, focus == Pane::Right);
 }
@@ -207,8 +215,8 @@ fn render_split_diff_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
-    if let Some(state) = app.diff_state_mut() {
-        diff::render(frame, left_rows[0], state, focus == Pane::Left);
+    if let Some(state) = diff_state_mut(&mut app.view_stack) {
+        diff::render(frame, left_rows[0], state, focus == Pane::Left, &app.theme);
     }
     render_diff_status_bar(frame, left_rows[1], app, focus == Pane::Left);
 
@@ -246,7 +254,11 @@ fn render_split_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App, focus
         return;
     }
     let left = format_task_info(app);
-    render_badge_status_bar(frame, area, " TASKS ", Color::Indexed(166), &left, hints, focus == Pane::Left);
+    let t = &app.theme;
+    let focused = focus == Pane::Left;
+    let badge_style = if focused { t.title_focus_tasks } else { t.title_blur };
+    let text_style = if focused { t.title_text_focus } else { t.title_text_blur };
+    render_badge_status_bar(frame, area, " TASKS ", badge_style, text_style, &left, hints, t.title_hints);
 }
 
 /// Single status bar for full-screen modes (Tasks, Agent full, dialogs).
@@ -305,7 +317,8 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         ],
     };
 
-    render_badge_status_bar(frame, area, " TASKS ", Color::Indexed(166), &left, hints, true);
+    let t = &app.theme;
+    render_badge_status_bar(frame, area, " TASKS ", t.title_focus_tasks, t.title_text_focus, &left, hints, t.title_hints);
 }
 
 /// Status bar for the agent pane.
@@ -332,7 +345,10 @@ fn render_agent_status_bar(frame: &mut Frame, area: Rect, app: &App, full: bool,
         &[("Ctrl-b/f", "scroll"), ("C-w", "left"), ("C-o", "full"), ("C-q", "back")]
     };
 
-    render_badge_status_bar(frame, area, " AGENT ", Color::Indexed(217), &location, hints, focused);
+    let t = &app.theme;
+    let badge_style = if focused { t.title_focus_agent } else { t.title_blur };
+    let text_style = if focused { t.title_text_focus } else { t.title_text_blur };
+    render_badge_status_bar(frame, area, " AGENT ", badge_style, text_style, &location, hints, t.title_hints);
 }
 
 /// Create a centered dialog with border, clearing the background.
@@ -657,15 +673,13 @@ fn render_badge_status_bar(
     frame: &mut Frame,
     area: Rect,
     badge: &str,
-    badge_color: Color,
+    badge_style: Style,
+    text_style: Style,
     location: &str,
     hints: &[(&str, &str)],
-    focused: bool,
+    hints_style: Style,
 ) {
     use ratatui::text::Text;
-
-    let badge_bg = if focused { badge_color } else { Color::Indexed(240) };
-    let text_fg = if focused { Color::Indexed(252) } else { Color::Indexed(245) };
 
     let right_str = {
         let s = hints
@@ -683,23 +697,9 @@ fn render_badge_status_bar(
     let gap = width.saturating_sub(badge_len + location_len + right_len);
 
     let line = Line::from(vec![
-        Span::styled(
-            badge,
-            Style::default()
-                .fg(Color::Black)
-                .bg(badge_bg)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!("{location}{}", " ".repeat(gap)),
-            Style::default().fg(text_fg).bg(Color::Indexed(234)),
-        ),
-        Span::styled(
-            right_str,
-            Style::default()
-                .fg(Color::Indexed(245))
-                .bg(Color::Indexed(234)),
-        ),
+        Span::styled(badge, badge_style),
+        Span::styled(format!("{location}{}", " ".repeat(gap)), text_style),
+        Span::styled(right_str, hints_style),
     ]);
 
     frame.render_widget(Paragraph::new(Text::from(line)), area);
@@ -744,5 +744,8 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         &[("j/k", "move"), ("/", "search"), ("n/N", "match"), ("@", "hunk"), ("R", "refresh"), ("q", "back")]
     };
 
-    render_badge_status_bar(frame, area, " DIFF ", Color::Indexed(33), &location, hints, focused);
+    let t = &app.theme;
+    let badge_style = if focused { t.title_focus_diff } else { t.title_blur };
+    let text_style = if focused { t.title_text_focus } else { t.title_text_blur };
+    render_badge_status_bar(frame, area, " DIFF ", badge_style, text_style, &location, hints, t.title_hints);
 }

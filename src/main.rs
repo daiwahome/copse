@@ -3,6 +3,7 @@ mod config;
 mod diff;
 mod event;
 mod task;
+mod theme;
 mod tui;
 mod ui;
 

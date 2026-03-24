@@ -1,16 +1,16 @@
 # Configuration
 
-copse stores its configuration in a TOML file managed by [confy](https://github.com/rust-cli/confy).
+copse stores its configuration in a TOML file.
 
 ## Configuration File
 
-**Path**: `~/.config/copse/default-config.toml`
+**Path**: `~/.config/copse/config.toml`
 
 Generate the config file with `--init`:
 
 ```sh
 copse --init
-# → Created ~/.config/copse/default-config.toml
+# → Created ~/.config/copse/config.toml
 ```
 
 If the file already exists, the command exits with an error to prevent overwriting. If the file does not exist, copse uses default values for all options.
@@ -19,6 +19,25 @@ If the file already exists, the command exits with an error to prevent overwriti
 auto_commit = false
 auto_permissions = false
 permission_mode = "default"
+
+[color]
+cursor = { bg = "236" }
+cursor-blur = { fg = "252", bg = "234" }
+title-focus-tasks = { fg = "black", bg = "166" }
+title-focus-agent = { fg = "black", bg = "217" }
+title-focus-diff = { fg = "black", bg = "33" }
+title-blur = { fg = "black", bg = "240" }
+title-text-focus = { fg = "252", bg = "234" }
+title-text-blur = { fg = "245", bg = "234" }
+title-hints = { fg = "245", bg = "234" }
+search-result = { bg = "238" }
+diff-add = { fg = "green" }
+diff-del = { fg = "red" }
+diff-chunk = { fg = "cyan" }
+diff-header = { fg = "white" }
+diff-context = { fg = "white" }
+list-highlight = { fg = "166", bg = "234" }
+list-highlight-blur = { fg = "252", bg = "234" }
 ```
 
 ## Options
@@ -43,6 +62,43 @@ When set, copse passes `--permission-mode <mode>` to every `claude` invocation. 
 | `dontAsk`           | Skip disallowed operations silently                  |
 
 The mode can be changed during a session within Claude Code (e.g. via `/permissions`).
+
+## Color Theme
+
+The `[color]` section lets you customize UI colors. Each entry accepts `fg` (foreground) and `bg` (background). Omitted fields keep their default values.
+
+### Color Formats
+
+| Format            | Example                      | Description                                    |
+|-------------------|------------------------------|------------------------------------------------|
+| Color name        | `"red"`, `"green"`, `"blue"` | 8 basic colors + `"default"` (terminal default) |
+| 256-color index   | `"166"`, `"234"`             | Numeric string from `0` to `255`               |
+
+Available color names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `default`
+
+### Color Areas
+
+| Key                   | Description                                  |
+|-----------------------|----------------------------------------------|
+| `cursor`              | Cursor line when focused                     |
+| `cursor-blur`         | Cursor line when unfocused                   |
+| `title-focus-tasks`   | TASKS status bar badge (focused)             |
+| `title-focus-agent`   | AGENT status bar badge (focused)             |
+| `title-focus-diff`    | DIFF status bar badge (focused)              |
+| `title-blur`          | Status bar badge (unfocused)                 |
+| `title-text-focus`    | Status bar text (focused)                    |
+| `title-text-blur`     | Status bar text (unfocused)                  |
+| `title-hints`         | Status bar key hints                         |
+| `search-result`       | Search match highlight                       |
+| `diff-add`            | Diff added lines                             |
+| `diff-del`            | Diff deleted lines                           |
+| `diff-chunk`          | Diff hunk header                             |
+| `diff-header`         | Diff file header                             |
+| `diff-context`        | Diff context lines                           |
+| `list-highlight`      | Task list selected row (focused)             |
+| `list-highlight-blur` | Task list selected row (unfocused)           |
+
+Invalid color names show a warning in the status bar on startup.
 
 ## Auto-Commit
 

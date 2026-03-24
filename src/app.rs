@@ -5,6 +5,7 @@ use crate::{
     diff::DiffState,
     event::{AppEvent, TaskId},
     task::Task,
+    theme::Theme,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -84,6 +85,8 @@ pub struct App {
     pub focus: Pane,
     /// Active dialog overlay (independent of layout)
     pub dialog: Option<Dialog>,
+    /// Color theme (built from config)
+    pub theme: Theme,
 }
 
 impl App {
@@ -93,6 +96,12 @@ impl App {
         config: Config,
         event_tx: tokio::sync::mpsc::Sender<AppEvent>,
     ) -> Self {
+        let (theme, theme_warnings) = Theme::from_color_config(&config.color);
+        let last_error = if theme_warnings.is_empty() {
+            None
+        } else {
+            Some(theme_warnings.join("; "))
+        };
         Self {
             tasks: Vec::new(),
             selected_index: 0,
@@ -102,10 +111,11 @@ impl App {
             git_common_dir,
             config,
             event_tx,
-            last_error: None,
+            last_error,
             fullscreen: None,
             focus: Pane::Left,
             dialog: None,
+            theme,
         }
     }
 

@@ -5,7 +5,7 @@ use crate::{
     diff::DiffState,
     event::{AppEvent, TaskId},
     keybind::{AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
-    task::Task,
+    task::{SpawnParams, Task},
     theme::Theme,
 };
 
@@ -48,15 +48,26 @@ impl ChildView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
-    NewTask { input: String },
-    NewTaskUpstream { name: String, branches: Vec<String>, selected: usize },
+    NewTask {
+        input: String,
+    },
+    NewTaskUpstream {
+        name: String,
+        branches: Vec<String>,
+        selected: usize,
+    },
     ConfirmQuit,
     ConfirmKill,
     ConfirmDelete,
     ConfirmSync,
     ConfirmMerge,
-    ChangeUpstream { branches: Vec<String>, selected: usize },
-    DiffSearch { input: String },
+    ChangeUpstream {
+        branches: Vec<String>,
+        selected: usize,
+    },
+    DiffSearch {
+        input: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -246,9 +257,8 @@ impl App {
                     task.status = crate::task::TaskStatus::Stopped;
                     task.waiting_for_input = false;
                     task.waiting_status_dirty = false;
-                    task.commits_ahead = Task::compute_commits_ahead(
-                        &self.repo_root, &task.name, &task.upstream,
-                    );
+                    task.commits_ahead =
+                        Task::compute_commits_ahead(&self.repo_root, &task.name, &task.upstream);
                 }
                 if self.focused_task_id() == Some(id) {
                     self.close_agent();
@@ -338,9 +348,8 @@ impl App {
     /// Refresh commits_ahead for all tasks.
     pub fn refresh_commits_ahead(&mut self) {
         for task in &mut self.tasks {
-            task.commits_ahead = Task::compute_commits_ahead(
-                &self.repo_root, &task.name, &task.upstream,
-            );
+            task.commits_ahead =
+                Task::compute_commits_ahead(&self.repo_root, &task.name, &task.upstream);
         }
     }
 
@@ -348,13 +357,19 @@ impl App {
         let dialog = self.dialog.take().unwrap();
         match dialog {
             Dialog::NewTask { input } => self.handle_new_task_dialog(key, input),
-            Dialog::NewTaskUpstream { name, branches, selected } => self.handle_new_task_upstream_dialog(key, name, branches, selected),
+            Dialog::NewTaskUpstream {
+                name,
+                branches,
+                selected,
+            } => self.handle_new_task_upstream_dialog(key, name, branches, selected),
             Dialog::ConfirmQuit => self.handle_confirm_quit_dialog(key),
             Dialog::ConfirmKill => self.handle_confirm_kill_dialog(key),
             Dialog::ConfirmDelete => self.handle_confirm_delete_dialog(key),
             Dialog::ConfirmSync => self.handle_confirm_sync_dialog(key),
             Dialog::ConfirmMerge => self.handle_confirm_merge_dialog(key),
-            Dialog::ChangeUpstream { branches, selected } => self.handle_change_upstream_dialog(key, branches, selected),
+            Dialog::ChangeUpstream { branches, selected } => {
+                self.handle_change_upstream_dialog(key, branches, selected)
+            }
             Dialog::DiffSearch { input } => self.handle_diff_search_dialog(key, input),
         }
     }
@@ -366,7 +381,8 @@ impl App {
                 let name = input.trim().to_string();
                 if name.is_empty() {
                 } else if !Self::is_valid_task_name(&name) {
-                    self.last_error = Some("Invalid task name (no spaces, .., or special chars)".to_string());
+                    self.last_error =
+                        Some("Invalid task name (no spaces, .., or special chars)".to_string());
                     self.dialog = Some(Dialog::NewTask { input });
                 } else if self.tasks.iter().any(|t| t.name == name) {
                     self.last_error = Some(format!("Task '{name}' already exists"));
@@ -378,45 +394,86 @@ impl App {
                     } else {
                         let current = self.get_current_branch().unwrap_or_default();
                         let selected = branches.iter().position(|b| b == &current).unwrap_or(0);
-                        self.dialog = Some(Dialog::NewTaskUpstream { name, branches, selected });
+                        self.dialog = Some(Dialog::NewTaskUpstream {
+                            name,
+                            branches,
+                            selected,
+                        });
                     }
                 }
             }
-            KeyCode::Backspace => { input.pop(); self.dialog = Some(Dialog::NewTask { input }); }
-            KeyCode::Char(c) => { input.push(c); self.dialog = Some(Dialog::NewTask { input }); }
-            _ => { self.dialog = Some(Dialog::NewTask { input }); }
+            KeyCode::Backspace => {
+                input.pop();
+                self.dialog = Some(Dialog::NewTask { input });
+            }
+            KeyCode::Char(c) => {
+                input.push(c);
+                self.dialog = Some(Dialog::NewTask { input });
+            }
+            _ => {
+                self.dialog = Some(Dialog::NewTask { input });
+            }
         }
         Ok(())
     }
 
-    fn handle_new_task_upstream_dialog(&mut self, key: KeyEvent, name: String, branches: Vec<String>, mut selected: usize) -> anyhow::Result<()> {
+    fn handle_new_task_upstream_dialog(
+        &mut self,
+        key: KeyEvent,
+        name: String,
+        branches: Vec<String>,
+        mut selected: usize,
+    ) -> anyhow::Result<()> {
         match key.code {
             KeyCode::Esc => {}
             KeyCode::Char('j') | KeyCode::Down => {
-                if !branches.is_empty() { selected = (selected + 1) % branches.len(); }
-                self.dialog = Some(Dialog::NewTaskUpstream { name, branches, selected });
+                if !branches.is_empty() {
+                    selected = (selected + 1) % branches.len();
+                }
+                self.dialog = Some(Dialog::NewTaskUpstream {
+                    name,
+                    branches,
+                    selected,
+                });
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if !branches.is_empty() { selected = selected.checked_sub(1).unwrap_or(branches.len() - 1); }
-                self.dialog = Some(Dialog::NewTaskUpstream { name, branches, selected });
+                if !branches.is_empty() {
+                    selected = selected.checked_sub(1).unwrap_or(branches.len() - 1);
+                }
+                self.dialog = Some(Dialog::NewTaskUpstream {
+                    name,
+                    branches,
+                    selected,
+                });
             }
             KeyCode::Enter => {
                 let upstream = branches[selected].clone();
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
                 let content_rows = rows.saturating_sub(1);
-                let task = Task::new_stopped(name, upstream, &self.worktree_base_dir, content_rows, cols);
+                let task =
+                    Task::new_stopped(name, upstream, &self.worktree_base_dir, content_rows, cols);
                 let _ = self.event_tx.try_send(AppEvent::TaskCreated(task));
             }
-            _ => { self.dialog = Some(Dialog::NewTaskUpstream { name, branches, selected }); }
+            _ => {
+                self.dialog = Some(Dialog::NewTaskUpstream {
+                    name,
+                    branches,
+                    selected,
+                });
+            }
         }
         Ok(())
     }
 
     fn handle_confirm_quit_dialog(&mut self, key: KeyEvent) -> anyhow::Result<()> {
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => { self.should_quit = true; }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.should_quit = true;
+            }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {}
-            _ => { self.dialog = Some(Dialog::ConfirmQuit); }
+            _ => {
+                self.dialog = Some(Dialog::ConfirmQuit);
+            }
         }
         Ok(())
     }
@@ -431,7 +488,9 @@ impl App {
                 }
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {}
-            _ => { self.dialog = Some(Dialog::ConfirmKill); }
+            _ => {
+                self.dialog = Some(Dialog::ConfirmKill);
+            }
         }
         Ok(())
     }
@@ -448,17 +507,32 @@ impl App {
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
                             Task::delete_task(&repo_root, &worktree_base_dir, &name)
-                        }).await;
+                        })
+                        .await;
                         match result {
-                            Ok(Ok(())) => { let _ = event_tx.send(AppEvent::TaskDeleted(id)).await; }
-                            Ok(Err(e)) => { let _ = event_tx.send(AppEvent::GitOpResult(Err(format!("Delete failed: {e}")))).await; }
-                            Err(e) => { let _ = event_tx.send(AppEvent::GitOpResult(Err(format!("Delete task error: {e}")))).await; }
+                            Ok(Ok(())) => {
+                                let _ = event_tx.send(AppEvent::TaskDeleted(id)).await;
+                            }
+                            Ok(Err(e)) => {
+                                let _ = event_tx
+                                    .send(AppEvent::GitOpResult(Err(format!("Delete failed: {e}"))))
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = event_tx
+                                    .send(AppEvent::GitOpResult(Err(format!(
+                                        "Delete task error: {e}"
+                                    ))))
+                                    .await;
+                            }
                         }
                     });
                 }
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {}
-            _ => { self.dialog = Some(Dialog::ConfirmDelete); }
+            _ => {
+                self.dialog = Some(Dialog::ConfirmDelete);
+            }
         }
         Ok(())
     }
@@ -474,18 +548,36 @@ impl App {
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
-                            Task::sync_from_upstream(&repo_root, &worktree_base_dir, &name, &upstream)
-                        }).await;
+                            Task::sync_from_upstream(
+                                &repo_root,
+                                &worktree_base_dir,
+                                &name,
+                                &upstream,
+                            )
+                        })
+                        .await;
                         match result {
-                            Ok(Ok(())) => { let _ = event_tx.send(AppEvent::GitOpResult(Ok(()))).await; }
-                            Ok(Err(e)) => { let _ = event_tx.send(AppEvent::GitOpResult(Err(format!("Sync failed: {e}")))).await; }
-                            Err(e) => { let _ = event_tx.send(AppEvent::GitOpResult(Err(format!("Sync error: {e}")))).await; }
+                            Ok(Ok(())) => {
+                                let _ = event_tx.send(AppEvent::GitOpResult(Ok(()))).await;
+                            }
+                            Ok(Err(e)) => {
+                                let _ = event_tx
+                                    .send(AppEvent::GitOpResult(Err(format!("Sync failed: {e}"))))
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = event_tx
+                                    .send(AppEvent::GitOpResult(Err(format!("Sync error: {e}"))))
+                                    .await;
+                            }
                         }
                     });
                 }
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {}
-            _ => { self.dialog = Some(Dialog::ConfirmSync); }
+            _ => {
+                self.dialog = Some(Dialog::ConfirmSync);
+            }
         }
         Ok(())
     }
@@ -501,11 +593,24 @@ impl App {
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
                             Task::merge_ff(&repo_root, &name, &upstream)
-                        }).await;
+                        })
+                        .await;
                         match result {
-                            Ok(Ok(())) => { let _ = event_tx.send(AppEvent::GitOpResult(Ok(()))).await; }
-                            Ok(Err(e)) => { let _ = event_tx.send(AppEvent::GitOpResult(Err(format!("FF merge failed: {e}")))).await; }
-                            Err(e) => { let _ = event_tx.send(AppEvent::GitOpResult(Err(format!("Merge error: {e}")))).await; }
+                            Ok(Ok(())) => {
+                                let _ = event_tx.send(AppEvent::GitOpResult(Ok(()))).await;
+                            }
+                            Ok(Err(e)) => {
+                                let _ = event_tx
+                                    .send(AppEvent::GitOpResult(Err(format!(
+                                        "FF merge failed: {e}"
+                                    ))))
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = event_tx
+                                    .send(AppEvent::GitOpResult(Err(format!("Merge error: {e}"))))
+                                    .await;
+                            }
                         }
                     });
                 }
@@ -514,24 +619,37 @@ impl App {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let name = task.name.clone();
                     let upstream = task.upstream.clone();
-                    let _ = self.event_tx.try_send(AppEvent::SquashMerge { name, upstream });
+                    let _ = self
+                        .event_tx
+                        .try_send(AppEvent::SquashMerge { name, upstream });
                 }
             }
             KeyCode::Esc => {}
-            _ => { self.dialog = Some(Dialog::ConfirmMerge); }
+            _ => {
+                self.dialog = Some(Dialog::ConfirmMerge);
+            }
         }
         Ok(())
     }
 
-    fn handle_change_upstream_dialog(&mut self, key: KeyEvent, branches: Vec<String>, mut selected: usize) -> anyhow::Result<()> {
+    fn handle_change_upstream_dialog(
+        &mut self,
+        key: KeyEvent,
+        branches: Vec<String>,
+        mut selected: usize,
+    ) -> anyhow::Result<()> {
         match key.code {
             KeyCode::Esc => {}
             KeyCode::Char('j') | KeyCode::Down => {
-                if !branches.is_empty() { selected = (selected + 1) % branches.len(); }
+                if !branches.is_empty() {
+                    selected = (selected + 1) % branches.len();
+                }
                 self.dialog = Some(Dialog::ChangeUpstream { branches, selected });
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if !branches.is_empty() { selected = selected.checked_sub(1).unwrap_or(branches.len() - 1); }
+                if !branches.is_empty() {
+                    selected = selected.checked_sub(1).unwrap_or(branches.len() - 1);
+                }
                 self.dialog = Some(Dialog::ChangeUpstream { branches, selected });
             }
             KeyCode::Enter => {
@@ -539,17 +657,28 @@ impl App {
                 if let Some(task) = self.tasks.get_mut(self.selected_index) {
                     let name = task.name.clone();
                     match Task::set_upstream(&self.repo_root, &name, &new_upstream) {
-                        Ok(()) => { task.upstream = new_upstream; self.refresh_commits_ahead(); }
-                        Err(e) => { self.last_error = Some(format!("Failed to set upstream: {e}")); }
+                        Ok(()) => {
+                            task.upstream = new_upstream;
+                            self.refresh_commits_ahead();
+                        }
+                        Err(e) => {
+                            self.last_error = Some(format!("Failed to set upstream: {e}"));
+                        }
                     }
                 }
             }
-            _ => { self.dialog = Some(Dialog::ChangeUpstream { branches, selected }); }
+            _ => {
+                self.dialog = Some(Dialog::ChangeUpstream { branches, selected });
+            }
         }
         Ok(())
     }
 
-    fn handle_diff_search_dialog(&mut self, key: KeyEvent, mut input: String) -> anyhow::Result<()> {
+    fn handle_diff_search_dialog(
+        &mut self,
+        key: KeyEvent,
+        mut input: String,
+    ) -> anyhow::Result<()> {
         match key.code {
             KeyCode::Esc => {}
             KeyCode::Enter => {
@@ -564,9 +693,17 @@ impl App {
                     }
                 }
             }
-            KeyCode::Backspace => { input.pop(); self.dialog = Some(Dialog::DiffSearch { input }); }
-            KeyCode::Char(c) => { input.push(c); self.dialog = Some(Dialog::DiffSearch { input }); }
-            _ => { self.dialog = Some(Dialog::DiffSearch { input }); }
+            KeyCode::Backspace => {
+                input.pop();
+                self.dialog = Some(Dialog::DiffSearch { input });
+            }
+            KeyCode::Char(c) => {
+                input.push(c);
+                self.dialog = Some(Dialog::DiffSearch { input });
+            }
+            _ => {
+                self.dialog = Some(Dialog::DiffSearch { input });
+            }
         }
         Ok(())
     }
@@ -614,11 +751,7 @@ impl App {
                     if ahead == 0 {
                         self.last_error = Some("No commits ahead of upstream".to_string());
                     } else {
-                        match DiffState::from_task(
-                            &self.repo_root,
-                            &task.name,
-                            &task.upstream,
-                        ) {
+                        match DiffState::from_task(&self.repo_root, &task.name, &task.upstream) {
                             Ok(state) => {
                                 self.push_diff(state);
                                 self.focus = Pane::Right;
@@ -652,16 +785,21 @@ impl App {
             TasksAction::ChangeUpstream => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     if !task.is_stopped() {
-                        self.last_error = Some("Stop the task before changing upstream".to_string());
+                        self.last_error =
+                            Some("Stop the task before changing upstream".to_string());
                     } else if !task.has_run {
-                        self.last_error = Some("Launch the task at least once before changing upstream".to_string());
+                        self.last_error = Some(
+                            "Launch the task at least once before changing upstream".to_string(),
+                        );
                     } else {
                         let branches = Task::list_upstream_candidates(&self.repo_root);
                         if branches.is_empty() {
-                            self.last_error = Some("No eligible upstream branches found".to_string());
+                            self.last_error =
+                                Some("No eligible upstream branches found".to_string());
                         } else {
                             let current_upstream = &task.upstream;
-                            let selected = branches.iter()
+                            let selected = branches
+                                .iter()
                                 .position(|b| b == current_upstream)
                                 .unwrap_or(0);
                             self.dialog = Some(Dialog::ChangeUpstream { branches, selected });
@@ -737,9 +875,12 @@ impl App {
                             .map(|(_, r)| r.saturating_sub(2) as usize)
                             .unwrap_or(20);
                         let new_offset = task.scroll_offset.saturating_add(page);
-                        let mut screen = task.parser.lock()
+                        let mut screen = task
+                            .parser
+                            .lock()
                             .unwrap_or_else(|e| e.into_inner())
-                            .screen().clone();
+                            .screen()
+                            .clone();
                         screen.set_scrollback(new_offset);
                         task.scroll_offset = screen.scrollback();
                     }
@@ -879,19 +1020,22 @@ impl App {
         let Some(task) = self.tasks.get(index) else {
             return;
         };
+        let params = SpawnParams {
+            id: task.id,
+            name: task.name.clone(),
+            upstream: task.upstream.clone(),
+            has_run: task.has_run,
+            repo_root: self.repo_root.clone(),
+            worktree_base_dir: self.worktree_base_dir.clone(),
+            config: self.config.clone(),
+        };
         let id = task.id;
-        let name = task.name.clone();
-        let upstream = task.upstream.clone();
-        let has_run = task.has_run;
-        let tx = self.event_tx.clone();
-        let repo_root = self.repo_root.clone();
-        let worktree_base_dir = self.worktree_base_dir.clone();
-        let config = self.config.clone();
         let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
         let content_rows = rows.saturating_sub(1); // reserve 1 row for status bar
+        let tx = self.event_tx.clone();
         let event_tx = self.event_tx.clone();
         tokio::spawn(async move {
-            let result = Task::spawn(id, name, upstream, has_run, repo_root, worktree_base_dir, config, content_rows, cols, tx)
+            let result = Task::spawn(params, content_rows, cols, tx)
                 .await
                 .map_err(|e| format!("Failed to resume task: {e}"));
             let _ = event_tx
@@ -955,9 +1099,8 @@ impl App {
             return false;
         }
         // Only allow characters safe for git branch names
-        name.chars().all(|c| {
-            c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'
-        })
+        name.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     }
 }
 

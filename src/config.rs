@@ -119,7 +119,11 @@ pub struct ColorEntry {
 
 impl ColorEntry {
     fn new() -> Self {
-        Self { fg: None, bg: None, attrs: vec![] }
+        Self {
+            fg: None,
+            bg: None,
+            attrs: vec![],
+        }
     }
 
     fn fg(mut self, color: &str) -> Self {
@@ -185,7 +189,10 @@ pub struct ColorConfig {
     pub diff_context: ColorEntry,
     #[serde(default = "default_list_highlight", rename = "list-highlight")]
     pub list_highlight: ColorEntry,
-    #[serde(default = "default_list_highlight_blur", rename = "list-highlight-blur")]
+    #[serde(
+        default = "default_list_highlight_blur",
+        rename = "list-highlight-blur"
+    )]
     pub list_highlight_blur: ColorEntry,
 }
 
@@ -214,20 +221,54 @@ impl Default for ColorConfig {
 }
 
 // Default value functions for serde
-fn default_cursor() -> ColorEntry { ColorEntry::new().bg("236") }
-fn default_cursor_blur() -> ColorEntry { ColorEntry::new().fg("252").bg("234") }
-fn default_title_focus_tasks() -> ColorEntry { ColorEntry::new().fg("black").bg("166").bold() }
-fn default_title_focus_agent() -> ColorEntry { ColorEntry::new().fg("black").bg("217").bold() }
-fn default_title_focus_diff() -> ColorEntry { ColorEntry::new().fg("black").bg("33").bold() }
-fn default_title_blur() -> ColorEntry { ColorEntry::new().fg("black").bg("240").bold() }
-fn default_title_text_focus() -> ColorEntry { ColorEntry::new().fg("252").bg("234") }
-fn default_title_text_blur() -> ColorEntry { ColorEntry::new().fg("245").bg("234") }
-fn default_title_hints() -> ColorEntry { ColorEntry::new().fg("245").bg("234") }
-fn default_search_result() -> ColorEntry { ColorEntry::new().bg("238") }
-fn default_diff_add() -> ColorEntry { ColorEntry::new().fg("green") }
-fn default_diff_del() -> ColorEntry { ColorEntry::new().fg("red") }
-fn default_diff_chunk() -> ColorEntry { ColorEntry::new().fg("cyan") }
-fn default_diff_header() -> ColorEntry { ColorEntry::new().fg("white").bold() }
-fn default_diff_context() -> ColorEntry { ColorEntry::new().fg("white") }
-fn default_list_highlight() -> ColorEntry { ColorEntry::new().fg("166").bg("234").bold() }
-fn default_list_highlight_blur() -> ColorEntry { ColorEntry::new().fg("252").bg("234") }
+fn default_cursor() -> ColorEntry {
+    ColorEntry::new().bg("236")
+}
+fn default_cursor_blur() -> ColorEntry {
+    ColorEntry::new().fg("252").bg("234")
+}
+fn default_title_focus_tasks() -> ColorEntry {
+    ColorEntry::new().fg("black").bg("166").bold()
+}
+fn default_title_focus_agent() -> ColorEntry {
+    ColorEntry::new().fg("black").bg("217").bold()
+}
+fn default_title_focus_diff() -> ColorEntry {
+    ColorEntry::new().fg("black").bg("33").bold()
+}
+fn default_title_blur() -> ColorEntry {
+    ColorEntry::new().fg("black").bg("240").bold()
+}
+fn default_title_text_focus() -> ColorEntry {
+    ColorEntry::new().fg("252").bg("234")
+}
+fn default_title_text_blur() -> ColorEntry {
+    ColorEntry::new().fg("245").bg("234")
+}
+fn default_title_hints() -> ColorEntry {
+    ColorEntry::new().fg("245").bg("234")
+}
+fn default_search_result() -> ColorEntry {
+    ColorEntry::new().bg("238")
+}
+fn default_diff_add() -> ColorEntry {
+    ColorEntry::new().fg("green")
+}
+fn default_diff_del() -> ColorEntry {
+    ColorEntry::new().fg("red")
+}
+fn default_diff_chunk() -> ColorEntry {
+    ColorEntry::new().fg("cyan")
+}
+fn default_diff_header() -> ColorEntry {
+    ColorEntry::new().fg("white").bold()
+}
+fn default_diff_context() -> ColorEntry {
+    ColorEntry::new().fg("white")
+}
+fn default_list_highlight() -> ColorEntry {
+    ColorEntry::new().fg("166").bg("234").bold()
+}
+fn default_list_highlight_blur() -> ColorEntry {
+    ColorEntry::new().fg("252").bg("234")
+}

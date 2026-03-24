@@ -75,7 +75,8 @@ impl KeyBind {
     /// modifier. We strip `SHIFT` for plain uppercase so that the user
     /// can write `"O"` in config rather than `"Shift-O"`.
     pub fn from_event(event: &KeyEvent) -> Self {
-        let mut mods = event.modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT);
+        let mut mods =
+            event.modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT);
         let code = event.code;
 
         // For uppercase letters without CONTROL, remove the SHIFT flag
@@ -86,7 +87,10 @@ impl KeyBind {
             }
         }
 
-        Self { code, modifiers: mods }
+        Self {
+            code,
+            modifiers: mods,
+        }
     }
 
     /// Parse a human-readable key string into a `KeyBind`.
@@ -149,9 +153,11 @@ impl KeyBind {
             }
         };
 
-        Ok(Self { code, modifiers: mods })
+        Ok(Self {
+            code,
+            modifiers: mods,
+        })
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +170,9 @@ pub struct ViewBindings<A> {
 
 impl<A: Copy> ViewBindings<A> {
     pub fn new() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
 
     pub fn insert(&mut self, kb: KeyBind, action: A) {
@@ -279,8 +287,7 @@ fn apply_overrides<A: Copy>(
     warnings: &mut Vec<String>,
 ) {
     // Build action name → (action, default_keys) lookup
-    let action_map: HashMap<&str, &ActionDef<A>> =
-        defs.iter().map(|d| (d.name, d)).collect();
+    let action_map: HashMap<&str, &ActionDef<A>> = defs.iter().map(|d| (d.name, d)).collect();
 
     // Track which key is bound to which user-specified action name, for duplicate detection
     let mut user_key_owner: HashMap<KeyBind, String> = HashMap::new();
@@ -331,16 +338,40 @@ impl KeyBindings {
         let mut warnings = Vec::new();
 
         if let Some(ref global_raw) = raw.global {
-            apply_overrides(&mut bindings.global, global_action_defs(), global_raw, "global", &mut warnings);
+            apply_overrides(
+                &mut bindings.global,
+                global_action_defs(),
+                global_raw,
+                "global",
+                &mut warnings,
+            );
         }
         if let Some(ref tasks_raw) = raw.tasks {
-            apply_overrides(&mut bindings.tasks, tasks_action_defs(), tasks_raw, "tasks", &mut warnings);
+            apply_overrides(
+                &mut bindings.tasks,
+                tasks_action_defs(),
+                tasks_raw,
+                "tasks",
+                &mut warnings,
+            );
         }
         if let Some(ref diff_raw) = raw.diff {
-            apply_overrides(&mut bindings.diff, diff_action_defs(), diff_raw, "diff", &mut warnings);
+            apply_overrides(
+                &mut bindings.diff,
+                diff_action_defs(),
+                diff_raw,
+                "diff",
+                &mut warnings,
+            );
         }
         if let Some(ref agent_raw) = raw.agent {
-            apply_overrides(&mut bindings.agent, agent_action_defs(), agent_raw, "agent", &mut warnings);
+            apply_overrides(
+                &mut bindings.agent,
+                agent_action_defs(),
+                agent_raw,
+                "agent",
+                &mut warnings,
+            );
         }
 
         (bindings, warnings)
@@ -354,7 +385,11 @@ impl KeyBindings {
 fn action_defs_to_toml<A: Copy>(defs: &[ActionDef<A>]) -> String {
     let mut out = String::new();
     for def in defs {
-        let keys: Vec<String> = def.default_keys.iter().map(|k| format!("\"{k}\"")).collect();
+        let keys: Vec<String> = def
+            .default_keys
+            .iter()
+            .map(|k| format!("\"{k}\""))
+            .collect();
         out.push_str(&format!("{} = [{}]\n", def.name, keys.join(", ")));
     }
     out
@@ -455,7 +490,13 @@ mod tests {
 
         let mut bindings = build_defaults(tasks_action_defs());
         let mut warnings = Vec::new();
-        apply_overrides(&mut bindings, tasks_action_defs(), &raw, "tasks", &mut warnings);
+        apply_overrides(
+            &mut bindings,
+            tasks_action_defs(),
+            &raw,
+            "tasks",
+            &mut warnings,
+        );
 
         assert!(
             warnings.iter().any(|w| w.contains("Duplicate key")),

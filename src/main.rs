@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod diff;
 mod event;
 mod task;
 mod tui;

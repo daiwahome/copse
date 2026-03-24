@@ -1,4 +1,5 @@
 mod agent;
+mod diff;
 mod list;
 
 use ratatui::{
@@ -9,32 +10,88 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Mode};
+use crate::app::{App, Dialog, Pane, View, ViewLayout};
 
-pub fn render(frame: &mut Frame, app: &App) {
-    match &app.mode {
-        Mode::Agent { full: false } => {
-            render_split(frame, frame.area(), app);
+pub fn render(frame: &mut Frame, app: &mut App) {
+    match app.layout() {
+        ViewLayout::Single(View::Tasks) => {
+            render_single_tasks(frame, frame.area(), app);
         }
-        _ => {
-            // Full-screen: content on top, single status bar at bottom
+        ViewLayout::Fullscreen(View::Tasks) => {
+            // Tasks fullscreen: child views preserved but hidden
+            render_single_tasks(frame, frame.area(), app);
+        }
+        ViewLayout::Fullscreen(View::Agent) => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Fill(1), Constraint::Length(1)])
                 .split(frame.area());
-
-            let scroll_offset = render_main_full(frame, chunks[0], app);
-            render_single_status_bar(frame, chunks[1], app, scroll_offset);
+            let scroll_offset = agent::render(frame, chunks[0], app);
+            render_agent_status_bar(frame, chunks[1], app, true, scroll_offset, true);
+        }
+        ViewLayout::Fullscreen(View::Diff) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Fill(1), Constraint::Length(1)])
+                .split(frame.area());
+            if let Some(state) = app.diff_state_mut() {
+                diff::render(frame, chunks[0], state, true);
+            }
+            render_diff_status_bar(frame, chunks[1], app, true);
+        }
+        ViewLayout::Split(View::Tasks, View::Agent) => {
+            render_split_tasks_agent(frame, frame.area(), app);
+        }
+        ViewLayout::Split(View::Tasks, View::Diff) => {
+            render_split_tasks_diff(frame, frame.area(), app);
+        }
+        ViewLayout::Split(View::Diff, View::Agent) => {
+            render_split_diff_agent(frame, frame.area(), app);
+        }
+        ViewLayout::Single(View::Agent) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Fill(1), Constraint::Length(1)])
+                .split(frame.area());
+            let scroll_offset = agent::render(frame, chunks[0], app);
+            render_agent_status_bar(frame, chunks[1], app, true, scroll_offset, true);
+        }
+        ViewLayout::Single(View::Diff) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Fill(1), Constraint::Length(1)])
+                .split(frame.area());
+            if let Some(state) = app.diff_state_mut() {
+                diff::render(frame, chunks[0], state, true);
+            }
+            render_diff_status_bar(frame, chunks[1], app, true);
+        }
+        _ => {
+            render_single_tasks(frame, frame.area(), app);
         }
     }
 }
 
-/// Split view: left pane (tasks) + vertical divider + right pane (agent).
-/// Each pane has its own status bar at the bottom, like tig.
-fn render_split(frame: &mut Frame, area: Rect, app: &App) {
+/// Single tasks view (full screen task list + status bar).
+fn render_single_tasks(frame: &mut Frame, area: Rect, app: &mut App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(area);
+
+    list::render(frame, chunks[0], app, true);
+
+    // Render dialog overlays
+    render_dialog_overlay(frame, chunks[0], app);
+
+    render_single_status_bar(frame, chunks[1], app, 0);
+}
+
+/// Split view: [tasks | agent]
+fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
+    let focus = app.focus;
     let list_width = (area.width / 2).max(20);
 
-    // Horizontal split: left | divider (1 col) | right
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -48,62 +105,252 @@ fn render_split(frame: &mut Frame, area: Rect, app: &App) {
     let divider_area = cols[1];
     let right_area = cols[2];
 
-    // Draw the vertical divider line (tig uses a plain │ column)
     let divider_block = Block::default()
         .borders(Borders::LEFT)
         .border_style(Style::default().fg(Color::DarkGray));
     frame.render_widget(divider_block, divider_area);
 
-    // Left pane: content + status bar
+    // Left pane: task list
     let left_rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
-    list::render(frame, left_rows[0], app);
-    render_tasks_status_bar(frame, left_rows[1], app);
+    list::render(frame, left_rows[0], app, focus == Pane::Left);
+    let hints: &[(&str, &str)] = if focus == Pane::Left {
+        &[("j/k", "select"), ("d", "diff"), ("Enter", "focus"), ("C-w", "agent"), ("q", "back")]
+    } else {
+        &[("C-w", "focus")]
+    };
+    render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
 
-    // Right pane: content + status bar
+    // Right pane: agent
     let right_rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(right_area);
     let scroll_offset = agent::render(frame, right_rows[0], app);
-    render_agent_status_bar(frame, right_rows[1], app, false, scroll_offset);
+    render_agent_status_bar(frame, right_rows[1], app, false, scroll_offset, focus == Pane::Right);
 }
 
-/// Full-screen main content area (Tasks, NewTask, ConfirmQuit, Agent full).
-/// Returns the actual (clamped) scroll offset when in Agent mode, 0 otherwise.
-fn render_main_full(frame: &mut Frame, area: Rect, app: &App) -> usize {
-    match &app.mode {
-        Mode::Agent { full: true, .. } => {
-            agent::render(frame, area, app)
+/// Split view: [tasks | diff]
+fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
+    let focus = app.focus;
+    let list_width = (area.width / 2).max(20);
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(list_width),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+    let left_area = cols[0];
+    let divider_area = cols[1];
+    let right_area = cols[2];
+
+    let divider_block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(divider_block, divider_area);
+
+    // Left pane: task list
+    let left_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(left_area);
+    list::render(frame, left_rows[0], app, focus == Pane::Left);
+    let hints: &[(&str, &str)] = if focus == Pane::Left {
+        &[("j/k", "select"), ("Enter", "agent"), ("C-w", "diff"), ("q", "back")]
+    } else {
+        &[("C-w", "focus")]
+    };
+    render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
+
+    // Right pane: diff view
+    let right_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(right_area);
+    if let Some(state) = app.diff_state_mut() {
+        diff::render(frame, right_rows[0], state, focus == Pane::Right);
+    }
+    render_diff_status_bar(frame, right_rows[1], app, focus == Pane::Right);
+}
+
+/// Split view: [diff | agent]
+fn render_split_diff_agent(frame: &mut Frame, area: Rect, app: &mut App) {
+    let focus = app.focus;
+    let list_width = (area.width / 2).max(20);
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(list_width),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+    let left_area = cols[0];
+    let divider_area = cols[1];
+    let right_area = cols[2];
+
+    let divider_block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(divider_block, divider_area);
+
+    // Left pane: diff
+    let left_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(left_area);
+    if let Some(state) = app.diff_state_mut() {
+        diff::render(frame, left_rows[0], state, focus == Pane::Left);
+    }
+    render_diff_status_bar(frame, left_rows[1], app, focus == Pane::Left);
+
+    // Right pane: agent
+    let right_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(right_area);
+    let scroll_offset = agent::render(frame, right_rows[0], app);
+    render_agent_status_bar(frame, right_rows[1], app, false, scroll_offset, focus == Pane::Right);
+}
+
+/// Render dialog overlay if present.
+fn render_dialog_overlay(frame: &mut Frame, area: Rect, app: &App) {
+    match &app.dialog {
+        Some(Dialog::NewTask { input }) => render_new_task_dialog(frame, area, input),
+        Some(Dialog::NewTaskUpstream { name, branches, selected }) => {
+            render_new_task_upstream_dialog(frame, area, name, branches, *selected);
+        }
+        Some(Dialog::ConfirmQuit) => render_confirm_quit_dialog(frame, area, app),
+        Some(Dialog::ConfirmKill) => render_confirm_kill_dialog(frame, area, app),
+        Some(Dialog::ConfirmDelete) => render_confirm_delete_dialog(frame, area, app),
+        Some(Dialog::ConfirmSync) => render_confirm_sync_dialog(frame, area, app),
+        Some(Dialog::ConfirmMerge) => render_confirm_merge_dialog(frame, area, app),
+        Some(Dialog::ChangeUpstream { branches, selected }) => {
+            render_change_upstream_dialog(frame, area, app, branches, *selected);
+        }
+        Some(Dialog::DiffSearch { .. }) | None => {}
+    }
+}
+
+/// Status bar for the tasks pane in split views.
+fn render_split_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App, focus: Pane, hints: &[(&str, &str)]) {
+    if render_error_bar(frame, area, app) {
+        return;
+    }
+    let left = format_task_info(app);
+    render_badge_status_bar(frame, area, " TASKS ", Color::Indexed(166), &left, hints, focus == Pane::Left);
+}
+
+/// Single status bar for full-screen modes (Tasks, Agent full, dialogs).
+fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App, scroll_offset: usize) {
+    let width = area.width as usize;
+
+    if let Some(err) = &app.last_error {
+        let text = format!(" {err}");
+        let padding = " ".repeat(width.saturating_sub(text.len()));
+        let bar = Paragraph::new(Line::from(Span::styled(
+            format!("{text}{padding}"),
+            Style::default().fg(Color::White).bg(Color::Red),
+        )));
+        frame.render_widget(bar, area);
+        return;
+    }
+
+    match app.layout() {
+        ViewLayout::Fullscreen(View::Agent) => {
+            render_agent_status_bar(frame, area, app, true, scroll_offset, true);
+        }
+        ViewLayout::Fullscreen(View::Diff) => {
+            render_diff_status_bar(frame, area, app, true);
         }
         _ => {
-            list::render(frame, area, app);
-            match &app.mode {
-                Mode::NewTask { input } => render_new_task_dialog(frame, area, input),
-                Mode::NewTaskUpstream { name, branches, selected } => render_new_task_upstream_dialog(frame, area, name, branches, *selected),
-                Mode::ConfirmQuit => render_confirm_quit_dialog(frame, area, app),
-                Mode::ConfirmKill => render_confirm_kill_dialog(frame, area, app),
-                Mode::ConfirmDelete => render_confirm_delete_dialog(frame, area, app),
-                Mode::ConfirmSync => render_confirm_sync_dialog(frame, area, app),
-                Mode::ConfirmMerge => render_confirm_merge_dialog(frame, area, app),
-                Mode::ChangeUpstream { branches, selected } => render_change_upstream_dialog(frame, area, app, branches, *selected),
-                _ => {}
-            }
-            0
+            // Tasks or Tasks fullscreen — show task bar with dialog-aware hints
+            render_tasks_status_bar(frame, area, app);
         }
     }
 }
 
-fn render_new_task_dialog(frame: &mut Frame, area: Rect, input: &str) {
-    use ratatui::layout::Alignment;
+/// Status bar for the tasks view.
+fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
+    if render_error_bar(frame, area, app) {
+        return;
+    }
+
+    let left = format_task_info(app);
+
+    let hints: &[(&str, &str)] = match &app.dialog {
+        Some(Dialog::ConfirmKill) => &[("y", "kill"), ("n/Esc", "cancel")],
+        Some(Dialog::ConfirmDelete) => &[("y", "delete"), ("n/Esc", "cancel")],
+        Some(Dialog::ConfirmSync) => &[("y", "sync"), ("n/Esc", "cancel")],
+        Some(Dialog::ConfirmMerge) => &[("f", "ff"), ("s", "squash"), ("Esc", "cancel")],
+        Some(Dialog::ChangeUpstream { .. }) => &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
+        _ => &[
+            ("n", "new"),
+            ("Ctrl-k", "kill"),
+            ("M", "merge"),
+            ("S", "sync"),
+            ("U", "upstream"),
+            ("!", "delete"),
+            ("R", "refresh"),
+            ("Enter", "open"),
+            ("q", "quit"),
+        ],
+    };
+
+    render_badge_status_bar(frame, area, " TASKS ", Color::Indexed(166), &left, hints, true);
+}
+
+/// Status bar for the agent pane.
+fn render_agent_status_bar(frame: &mut Frame, area: Rect, app: &App, full: bool, scroll_offset: usize, focused: bool) {
+    let name = app
+        .focused_task()
+        .or_else(|| app.selected_task())
+        .map(|t| t.name.as_str())
+        .unwrap_or("");
+
+    let mut location = if full {
+        format!(" {name} - fullscreen")
+    } else {
+        format!(" {name}")
+    };
+
+    if scroll_offset > 0 {
+        location.push_str(&format!(" [SCROLL +{}]", scroll_offset));
+    }
+
+    let hints: &[(&str, &str)] = if full {
+        &[("Ctrl-b/f", "scroll"), ("C-o", "split"), ("C-q", "back")]
+    } else {
+        &[("Ctrl-b/f", "scroll"), ("C-w", "left"), ("C-o", "full"), ("C-q", "back")]
+    };
+
+    render_badge_status_bar(frame, area, " AGENT ", Color::Indexed(217), &location, hints, focused);
+}
+
+/// Create a centered dialog with border, clearing the background.
+/// Returns the inner Rect for content, or None if too small.
+fn create_centered_dialog(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    width: u16,
+    height: u16,
+    border_color: Color,
+) -> Option<Rect> {
     use ratatui::widgets::Clear;
 
-    let dialog_width = 50u16.min(area.width.saturating_sub(4));
-    let dialog_height = 5u16.min(area.height);
+    let dialog_width = width.min(area.width.saturating_sub(4));
+    let dialog_height = height.min(area.height);
     if dialog_width == 0 || dialog_height == 0 {
-        return;
+        return None;
     }
     let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
     let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
@@ -112,11 +359,20 @@ fn render_new_task_dialog(frame: &mut Frame, area: Rect, input: &str) {
     frame.render_widget(Clear, dialog_area);
 
     let block = Block::default()
-        .title(" New Task ")
+        .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+        .border_style(Style::default().fg(border_color));
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
+    Some(inner)
+}
+
+fn render_new_task_dialog(frame: &mut Frame, area: Rect, input: &str) {
+    use ratatui::layout::Alignment;
+
+    let Some(inner) = create_centered_dialog(frame, area, " New Task ", 50, 5, Color::Yellow) else {
+        return;
+    };
 
     let text = Paragraph::new(vec![
         Line::from("Task name:"),
@@ -130,27 +386,10 @@ fn render_new_task_dialog(frame: &mut Frame, area: Rect, input: &str) {
 }
 
 fn render_new_task_upstream_dialog(frame: &mut Frame, area: Rect, name: &str, branches: &[String], selected: usize) {
-    use ratatui::widgets::Clear;
-
-    // Height: 2 header lines + branch list (capped at 10)
     let visible_branches = branches.len().min(10) as u16;
-    let dialog_width = 50u16.min(area.width.saturating_sub(4));
-    let dialog_height = (4 + visible_branches).min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " New Task ", 50, 4 + visible_branches, Color::Yellow) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" New Task ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let mut lines = vec![
         Line::from(vec![
@@ -190,31 +429,16 @@ fn render_new_task_upstream_dialog(frame: &mut Frame, area: Rect, name: &str, br
 
 fn render_confirm_quit_dialog(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::layout::Alignment;
-    use ratatui::widgets::Clear;
 
     let running_count = app
         .tasks
         .iter()
-        .filter(|t| t.status == crate::task::TaskStatus::Running)
+        .filter(|t| t.is_running())
         .count();
 
-    let dialog_width = 52u16.min(area.width.saturating_sub(4));
-    let dialog_height = 6u16.min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " Quit copse? ", 52, 6, Color::Red) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" Quit copse? ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let msg = format!(
         "{} running task{} will be terminated.",
@@ -237,30 +461,15 @@ fn render_confirm_quit_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_confirm_kill_dialog(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::layout::Alignment;
-    use ratatui::widgets::Clear;
 
     let name = app
         .selected_task()
         .map(|t| t.name.as_str())
         .unwrap_or("?");
 
-    let dialog_width = 52u16.min(area.width.saturating_sub(4));
-    let dialog_height = 6u16.min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " Kill task? ", 52, 6, Color::Red) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" Kill task? ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let msg = format!("Terminate claude in '{name}'?");
     let text = Paragraph::new(vec![
@@ -279,30 +488,15 @@ fn render_confirm_kill_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_confirm_delete_dialog(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::layout::Alignment;
-    use ratatui::widgets::Clear;
 
     let name = app
         .selected_task()
         .map(|t| t.name.as_str())
         .unwrap_or("?");
 
-    let dialog_width = 52u16.min(area.width.saturating_sub(4));
-    let dialog_height = 6u16.min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " Delete task? ", 52, 6, Color::Red) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" Delete task? ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let msg = format!("Delete '{name}' (worktree + branch)?");
     let text = Paragraph::new(vec![
@@ -321,30 +515,15 @@ fn render_confirm_delete_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_confirm_sync_dialog(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::layout::Alignment;
-    use ratatui::widgets::Clear;
 
     let (name, upstream) = app
         .selected_task()
         .map(|t| (t.name.as_str(), t.upstream.as_str()))
         .unwrap_or(("?", "?"));
 
-    let dialog_width = 52u16.min(area.width.saturating_sub(4));
-    let dialog_height = 6u16.min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " Sync from upstream? ", 52, 6, Color::Red) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" Sync from upstream? ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let msg = format!("Reset '{name}' to '{upstream}'?");
     let text = Paragraph::new(vec![
@@ -363,30 +542,15 @@ fn render_confirm_sync_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_confirm_merge_dialog(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::layout::Alignment;
-    use ratatui::widgets::Clear;
 
     let (name, upstream) = app
         .selected_task()
         .map(|t| (t.name.as_str(), t.upstream.as_str()))
         .unwrap_or(("?", "?"));
 
-    let dialog_width = 52u16.min(area.width.saturating_sub(4));
-    let dialog_height = 6u16.min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " Merge to upstream ", 52, 6, Color::Yellow) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" Merge to upstream ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let msg = format!("Merge '{name}' into '{upstream}'?");
     let text = Paragraph::new(vec![
@@ -406,32 +570,15 @@ fn render_confirm_merge_dialog(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_change_upstream_dialog(frame: &mut Frame, area: Rect, app: &App, branches: &[String], selected: usize) {
-    use ratatui::widgets::Clear;
-
     let name = app
         .selected_task()
         .map(|t| t.name.as_str())
         .unwrap_or("?");
 
-    // Height: 2 header lines + branch list (capped at 10)
     let visible_branches = branches.len().min(10) as u16;
-    let dialog_width = 50u16.min(area.width.saturating_sub(4));
-    let dialog_height = (4 + visible_branches).min(area.height);
-    if dialog_width == 0 || dialog_height == 0 {
+    let Some(inner) = create_centered_dialog(frame, area, " Change Upstream ", 50, 4 + visible_branches, Color::Yellow) else {
         return;
-    }
-    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let block = Block::default()
-        .title(" Change Upstream ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
+    };
 
     let mut lines = vec![
         Line::from(vec![
@@ -469,11 +616,10 @@ fn render_change_upstream_dialog(frame: &mut Frame, area: Rect, app: &App, branc
     frame.render_widget(text, inner);
 }
 
-/// Single status bar for full-screen modes (Tasks, Agent full, dialogs).
-fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App, scroll_offset: usize) {
-    let width = area.width as usize;
-
+/// Render error message in the status bar area. Returns true if rendered.
+fn render_error_bar(frame: &mut Frame, area: Rect, app: &App) -> bool {
     if let Some(err) = &app.last_error {
+        let width = area.width as usize;
         let text = format!(" {err}");
         let padding = " ".repeat(width.saturating_sub(text.len()));
         let bar = Paragraph::new(Line::from(Span::styled(
@@ -481,37 +627,15 @@ fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App, scroll_off
             Style::default().fg(Color::White).bg(Color::Red),
         )));
         frame.render_widget(bar, area);
-        return;
-    }
-
-    match &app.mode {
-        Mode::Agent { .. } => {
-            render_agent_status_bar(frame, area, app, true, scroll_offset);
-        }
-        _ => {
-            // Tasks, ConfirmQuit, ConfirmKill, NewTask all show the tasks bar
-            render_tasks_status_bar(frame, area, app);
-        }
+        true
+    } else {
+        false
     }
 }
 
-/// Status bar for the tasks (left) pane.
-fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
-    let width = area.width as usize;
-
-    // Show error in left pane status bar when in split view
-    if let Some(err) = &app.last_error {
-        let text = format!(" {err}");
-        let padding = " ".repeat(width.saturating_sub(text.len()));
-        let bar = Paragraph::new(Line::from(Span::styled(
-            format!("{text}{padding}"),
-            Style::default().fg(Color::White).bg(Color::Red),
-        )));
-        frame.render_widget(bar, area);
-        return;
-    }
-
-    let left = if let Some(task) = app.selected_task() {
+/// Format selected task info for status bar display.
+fn format_task_info(app: &App) -> String {
+    if let Some(task) = app.selected_task() {
         let st = match task.status {
             crate::task::TaskStatus::Running => "running",
             crate::task::TaskStatus::Stopped => "stopped",
@@ -519,121 +643,23 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         format!(" {} - {}", task.name, st)
     } else {
         String::new()
-    };
-
-    let hints: &[(&str, &str)] = match &app.mode {
-        Mode::Agent { .. } => &[("j/k", "select")],
-        Mode::ConfirmKill => &[("y", "kill"), ("n/Esc", "cancel")],
-        Mode::ConfirmDelete => &[("y", "delete"), ("n/Esc", "cancel")],
-        Mode::ConfirmSync => &[("y", "sync"), ("n/Esc", "cancel")],
-        Mode::ConfirmMerge => &[("f", "ff"), ("s", "squash"), ("Esc", "cancel")],
-        Mode::ChangeUpstream { .. } => &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
-        _ => &[
-            ("n", "new"),
-            ("Ctrl-k", "kill"),
-            ("S-M", "merge"),
-            ("S-S", "sync"),
-            ("S-U", "upstream"),
-            ("!", "delete"),
-            ("Enter", "open"),
-            ("q", "quit"),
-        ],
-    };
-
-    render_status_bar_line(frame, area, &left, hints);
-}
-
-/// Status bar for the agent (right) pane.
-fn render_agent_status_bar(frame: &mut Frame, area: Rect, app: &App, full: bool, scroll_offset: usize) {
-    let name = app
-        .focused_task()
-        .or_else(|| app.selected_task())
-        .map(|t| t.name.as_str())
-        .unwrap_or("");
-
-    let mut location = if full {
-        format!(" {name} - fullscreen")
-    } else {
-        format!(" {name}")
-    };
-
-    if scroll_offset > 0 {
-        location.push_str(&format!(" [SCROLL +{}]", scroll_offset));
     }
-
-    let hints: &[(&str, &str)] = if full {
-        &[("Ctrl-b/f", "scroll"), ("Ctrl-]", "split")]
-    } else {
-        &[("Ctrl-b/f", "scroll"), ("Ctrl-]", "back")]
-    };
-
-    render_agent_status_bar_line(frame, area, &location, hints);
 }
 
-/// Render the agent status bar with an AGENT badge on the left.
-fn render_agent_status_bar_line(
+/// Generic status bar with badge, location text, and key hints.
+fn render_badge_status_bar(
     frame: &mut Frame,
     area: Rect,
+    badge: &str,
+    badge_color: Color,
     location: &str,
     hints: &[(&str, &str)],
+    focused: bool,
 ) {
     use ratatui::text::Text;
 
-    // Right-side hints in a muted style
-    let right_str = {
-        let s = hints
-            .iter()
-            .map(|(k, d)| format!("{k}:{d}"))
-            .collect::<Vec<_>>()
-            .join("  ");
-        format!("{s} ")
-    };
-
-    // AGENT label badge (same orange as TASKS, for visual pairing)
-    let agent_label = " AGENT ";
-
-    // Compute padding between location text and right hints
-    let agent_len = agent_label.len();
-    let location_len = location.len();
-    let right_len = right_str.len();
-    let width = area.width as usize;
-    let gap = width
-        .saturating_sub(agent_len + location_len + right_len);
-
-    let line = Line::from(vec![
-        // AGENT label: orange like TASKS badge
-        Span::styled(
-            agent_label,
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Indexed(166))
-                .add_modifier(Modifier::BOLD),
-        ),
-        // Location text on dark bg
-        Span::styled(
-            format!("{location}{}", " ".repeat(gap)),
-            Style::default()
-                .fg(Color::Indexed(252))
-                .bg(Color::Indexed(234)),
-        ),
-        // Right hints
-        Span::styled(
-            right_str,
-            Style::default()
-                .fg(Color::Indexed(245))
-                .bg(Color::Indexed(234)),
-        ),
-    ]);
-
-    frame.render_widget(Paragraph::new(Text::from(line)), area);
-}
-
-/// Render a single tig-style status bar line for the tasks pane.
-/// Left: orange [TASKS] badge + location text. Right: key hints.
-fn render_status_bar_line(frame: &mut Frame, area: Rect, left: &str, hints: &[(&str, &str)]) {
-    use ratatui::text::Text;
-
-    let badge = " TASKS ";
+    let badge_bg = if focused { badge_color } else { Color::Indexed(240) };
+    let text_fg = if focused { Color::Indexed(252) } else { Color::Indexed(245) };
 
     let right_str = {
         let s = hints
@@ -645,28 +671,23 @@ fn render_status_bar_line(frame: &mut Frame, area: Rect, left: &str, hints: &[(&
     };
 
     let badge_len = badge.len();
-    let left_len = left.len();
+    let location_len = location.len();
     let right_len = right_str.len();
     let width = area.width as usize;
-    let gap = width.saturating_sub(badge_len + left_len + right_len);
+    let gap = width.saturating_sub(badge_len + location_len + right_len);
 
     let line = Line::from(vec![
-        // Orange badge
         Span::styled(
             badge,
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Indexed(166))
+                .bg(badge_bg)
                 .add_modifier(Modifier::BOLD),
         ),
-        // Location text
         Span::styled(
-            format!("{left}{}", " ".repeat(gap)),
-            Style::default()
-                .fg(Color::Indexed(252))
-                .bg(Color::Indexed(234)),
+            format!("{location}{}", " ".repeat(gap)),
+            Style::default().fg(text_fg).bg(Color::Indexed(234)),
         ),
-        // Right hints
         Span::styled(
             right_str,
             Style::default()
@@ -676,4 +697,46 @@ fn render_status_bar_line(frame: &mut Frame, area: Rect, left: &str, hints: &[(&
     ]);
 
     frame.render_widget(Paragraph::new(Text::from(line)), area);
+}
+
+/// Status bar for the diff view.
+fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    if render_error_bar(frame, area, app) {
+        return;
+    }
+
+    // DiffSearch dialog: render search input inline in status bar (tig-style)
+    if let Some(Dialog::DiffSearch { input, .. }) = &app.dialog {
+        use ratatui::text::Text;
+        let width = area.width as usize;
+        let search_text = format!("/{input}");
+        let cursor_char = "█";
+        let padding = " ".repeat(width.saturating_sub(search_text.len() + cursor_char.len()));
+        let bg = Color::Indexed(234);
+        let line = Line::from(vec![
+            Span::styled(search_text, Style::default().fg(Color::White).bg(bg)),
+            Span::styled(cursor_char, Style::default().fg(Color::Yellow).bg(bg)),
+            Span::styled(padding, Style::default().bg(bg)),
+        ]);
+        frame.render_widget(Paragraph::new(Text::from(line)), area);
+        return;
+    }
+
+    let location = if let Some(state) = app.diff_state() {
+        format!(" {}", state.task_name)
+    } else {
+        String::new()
+    };
+
+    let is_full = app.fullscreen == Some(View::Diff);
+    let in_split_with_agent = app.has_view(View::Agent);
+    let hints: &[(&str, &str)] = if in_split_with_agent {
+        &[("j/k", "move"), ("/", "search"), ("@", "hunk"), ("R", "refresh"), ("O", "full"), ("C-w", "agent"), ("q", "back")]
+    } else if is_full {
+        &[("j/k", "move"), ("/", "search"), ("n/N", "match"), ("@", "hunk"), ("R", "refresh"), ("O", "split"), ("q", "back")]
+    } else {
+        &[("j/k", "move"), ("/", "search"), ("n/N", "match"), ("@", "hunk"), ("R", "refresh"), ("q", "back")]
+    };
+
+    render_badge_status_bar(frame, area, " DIFF ", Color::Indexed(33), &location, hints, focused);
 }

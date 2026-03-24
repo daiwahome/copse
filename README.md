@@ -71,6 +71,7 @@ copse/src
  ├── app.rs       Application state (tasks, mode, key handling)
  ├── task.rs      Manages git worktrees, spawns `claude` in a PTY
  │                Reads PTY output → vt100 parser → screen buffer
+ ├── diff.rs      Unified diff parser and search
  ├── config.rs    Configuration (confy, ~/.config/copse/)
  ├── event.rs     AppEvent enum (key, task lifecycle, resize)
  ├── templates/
@@ -78,6 +79,7 @@ copse/src
  └── ui/
       ├── mod.rs     Layout, status bars, dialogs
       ├── list.rs    Task list panel
+      ├── diff.rs    Diff view rendering
       └── agent.rs   PseudoTerminal widget (tui-term)
 ```
 

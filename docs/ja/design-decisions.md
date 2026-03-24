@@ -36,3 +36,7 @@ copse は標準的な git プリミティブ（ブランチ、tracking branch、
 ## なぜタスクのリネームをサポートしないのか
 
 タスクのリネームには git ブランチ (`copse/<name>`) のリネームと worktree ディレクトリの移動が必要。`git branch -m` と `git worktree move` で技術的には可能だが、Claude Code の `--continue` セッションは worktree パスに紐づいている。リネーム後はセッション履歴が失われ、再開時に新しいセッションとして開始される。セッションの継続性は copse のタスクライフサイクルの中核機能であるため、タスクのリネームは意図的にサポートしていない。
+
+## なぜ `git diff` をサブプロセスで実行するのか
+
+Diff view は `git diff <upstream>..<branch>` をサブプロセスとして実行し、unified diff 出力を直接パースする。これは最もシンプルなアプローチで、tig と同じ方式。copse が既に git と対話している方法（`rev-list`、`worktree add`、`branch` 等で `std::process::Command` を使用）とも一貫性がある。`git2` や diff パース用 crate 等の追加依存は不要。

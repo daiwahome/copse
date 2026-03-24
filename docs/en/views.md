@@ -1,6 +1,6 @@
 # Views
 
-copse has two main views, inspired by [tig](https://github.com/jonas/tig)'s split-pane layout.
+copse has three main views, inspired by [tig](https://github.com/jonas/tig)'s split-pane layout.
 
 ## Tasks View
 
@@ -16,28 +16,29 @@ The default view. Shows all tasks with their status, upstream branch, and commit
 
 Each task shows:
 
-| Element                | Description                                           |
-|------------------------|-------------------------------------------------------|
-| Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped         |
-| Name                   | Task name (also used as branch suffix: `copse/<name>`)|
-| Upstream               | The branch the task was forked from                   |
-| Status text            | `running` / `waiting` / `stopped`                     |
-| Commits ahead          | Number of commits ahead of upstream, or `synced`      |
+| Element                 | Description                                            |
+|-------------------------|--------------------------------------------------------|
+| Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped          |
+| Name                    | Task name (also used as branch suffix: `copse/<name>`) |
+| Upstream                | The branch the task was forked from                    |
+| Status text             | `running` / `waiting` / `stopped`                      |
+| Commits ahead           | Number of commits ahead of upstream, or `synced`       |
 
 ### Key Bindings
 
-| Key              | Action                                         |
-|------------------|-------------------------------------------------|
-| `j` / `↓`        | Select next task                               |
-| `k` / `↑`        | Select previous task                           |
-| `Enter`          | Open agent view (running) / Resume (stopped)   |
-| `n`              | New task (name → upstream selection)            |
-| `Ctrl-k`         | Kill selected task (running only)              |
-| `Shift-M`        | Merge into upstream (ff / squash, stopped only)|
-| `Shift-S`        | Sync from upstream (reset, stopped only)       |
-| `!`              | Delete task (worktree + branch, stopped only)  |
-| `Ctrl-r`         | Refresh commits ahead                          |
-| `q` / `Q`        | Quit copse                                     |
+| Key        | Action                                          |
+|------------|-------------------------------------------------|
+| `j` / `↓`  | Select next task                                |
+| `k` / `↑`  | Select previous task                            |
+| `Enter`    | Open agent view (running) / Resume (stopped)    |
+| `d`        | Open diff view (when commits ahead > 0)         |
+| `n`        | New task (name → upstream selection)             |
+| `Ctrl-k`   | Kill selected task (running only)               |
+| `M`        | Merge into upstream (ff / squash, stopped only) |
+| `S`        | Sync from upstream (reset, stopped only)        |
+| `!`        | Delete task (worktree + branch, stopped only)   |
+| `R`        | Refresh commits ahead                           |
+| `q` / `Q`  | Quit copse                                      |
 
 ### Task Creation Flow
 
@@ -47,13 +48,63 @@ Each task shows:
 4. Task appears as stopped (`■`)
 5. Press `Enter` to start claude in the task's worktree
 
-## Agent View
+## Diff View
 
-Shows the claude process output. All keystrokes are forwarded to claude except `Ctrl-]`.
+Shows the unified diff between the task branch and its upstream. Displays the output of `git diff <upstream>..<branch>` with tig-style coloring.
 
 ### Layout Modes
 
-**Split view** (default): Tasks list on the left, agent output on the right.
+**Split view** `[Tasks | Diff]`: Tasks list on the left, diff on the right. Press `d` from the tasks view to open.
+
+```
+┌─ Tasks ──────────┬─ Diff ───────────────────────┐
+│ ▶ task-a  ...    │ diff --git a/foo.rs b/foo.rs │
+│ ■ task-b  ...    │ @@ -1,5 +1,7 @@              │
+│                  │ +new line                     │
+├──────────────────┼──────────────────────────────┤
+│ TASKS status bar │ DIFF status bar              │
+└──────────────────┴──────────────────────────────┘
+```
+
+**Fullscreen**: Diff output fills the entire screen. Press `O` to toggle.
+
+When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the left, agent on the right.
+
+### Key Bindings (Diff pane)
+
+| Key        | Action                                            |
+|------------|---------------------------------------------------|
+| `j` / `↓`  | Move cursor down                                 |
+| `k` / `↑`  | Move cursor up                                   |
+| `Ctrl-b`   | Scroll up one page                               |
+| `Ctrl-f`   | Scroll down one page                             |
+| `/`        | Search (enter pattern, `Enter` to search)         |
+| `n`        | Next search match                                 |
+| `N`        | Previous search match                             |
+| `@`        | Jump to next hunk (sets pattern to `^@@`)          |
+| `R`        | Refresh diff                                       |
+| `O`        | Toggle split ↔ fullscreen                         |
+| `q`        | Close diff view                                   |
+
+When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`).
+
+### Key Bindings (Tasks pane, left focus)
+
+| Key        | Action                                            |
+|------------|---------------------------------------------------|
+| `j` / `k`  | Select task                                       |
+| `Enter`    | Open agent (running) / Resume (stopped)           |
+| `O`        | Tasks fullscreen                                  |
+| `Ctrl-w`   | Switch focus to diff pane                         |
+| `q`        | Close diff, return to tasks fullscreen            |
+
+## Agent View
+
+Shows the claude process output. Keystrokes are forwarded to claude when the agent pane has focus.
+
+### Layout Modes
+
+**Split view** `[Tasks | Agent]` (default): Tasks list on the left, agent output on the right.
 
 ```
 ┌─ Tasks ──────────┬─ Agent ──────────────────────┐
@@ -67,20 +118,39 @@ Shows the claude process output. All keystrokes are forwarded to claude except `
 
 **Fullscreen**: Agent output fills the entire screen.
 
-### Key Bindings
+When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left, agent on the right.
 
-| Key       | Action                                           | Overrides    |
-|-----------|--------------------------------------------------|--------------|
-| (TBD)     | Maximize to fullscreen (planned)                 |              |
-| `Ctrl-b`  | Scroll up one page (scrollback)                  | cursor left  |
-| `Ctrl-f`  | Scroll down one page (scrollback)                | cursor right |
-| `Ctrl-]`  | Fullscreen → split view, Split → back to Tasks   |              |
-| Any other | Reset scroll position and forward to Claude Code |              |
+### Key Bindings (Agent pane, right focus)
 
-### Status Bar
+| Key        | Action                                            | Overrides    |
+|------------|---------------------------------------------------|--------------|
+| `Ctrl-o`   | Toggle split ↔ fullscreen                         |              |
+| `Ctrl-q`   | Close agent view, return to tasks or diff          |              |
+| `Ctrl-w`   | Switch focus to left pane                          |              |
+| `Ctrl-b`   | Scroll up one page (scrollback)                    | cursor left  |
+| `Ctrl-f`   | Scroll down one page (scrollback)                  | cursor right |
+| Any other  | Reset scroll position and forward to Claude Code   |              |
 
-Both views have a status bar at the bottom with:
+### Key Bindings (Tasks pane, left focus)
 
-- **Left**: View badge (`TASKS` or `AGENT`) + context info
+| Key        | Action                                            |
+|------------|---------------------------------------------------|
+| `j` / `k`  | Select task                                       |
+| `d`        | Open diff view in left pane                        |
+| `Enter`    | Focus agent pane (running) / Resume (stopped)      |
+| `O`        | Tasks fullscreen                                   |
+| `Ctrl-w`   | Switch focus to agent pane                         |
+| `q`        | Close agent, return to tasks fullscreen            |
+
+## Focus Switching
+
+In split views, press `Ctrl-w` to toggle focus between the left and right panes. The focused pane's status bar badge is highlighted; the unfocused pane's badge is dimmed.
+
+`Ctrl-o` / `O` and `Ctrl-q` / `q` are equivalent — `Ctrl` variants are provided for the agent pane where regular keys are forwarded to the PTY.
+
+## Status Bar
+
+Each pane has a status bar at the bottom with:
+
+- **Left**: View badge (`TASKS`, `AGENT`, or `DIFF`) + context info
 - **Right**: Available key hints
-

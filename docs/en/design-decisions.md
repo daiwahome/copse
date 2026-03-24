@@ -32,3 +32,7 @@ Claude Code has a built-in `--worktree` flag that creates worktrees automaticall
 ### Git-native design
 
 copse uses standard git primitives (branches, tracking branches, worktrees) so that everything is inspectable and modifiable with plain `git` commands. `claude --worktree` uses auto-numbered branches and paths that are less meaningful to the user.
+
+## Why task rename is not supported
+
+Renaming a task would require renaming the git branch (`copse/<name>`) and moving the worktree directory. While both operations are straightforward with `git branch -m` and `git worktree move`, Claude Code's `--continue` session is tied to the worktree path. After a rename, the session history would be lost and a new session would start on resume. Since session continuity is a core feature of copse's task lifecycle, task rename is intentionally not supported.

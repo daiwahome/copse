@@ -600,6 +600,22 @@ impl Task {
         Ok(())
     }
 
+    /// Change the upstream (tracking branch) for a task branch.
+    pub fn set_upstream(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<()> {
+        let branch = Self::branch_name(name);
+        let out = std::process::Command::new("git")
+            .args(["branch", "--set-upstream-to", upstream, &branch])
+            .current_dir(repo_root)
+            .output()?;
+        if !out.status.success() {
+            anyhow::bail!(
+                "set-upstream-to failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        Ok(())
+    }
+
     /// Forcibly terminate the task
     pub fn kill(&mut self) -> anyhow::Result<()> {
         if let Some(killer) = &mut self.killer {

@@ -29,6 +29,8 @@ pub enum Mode {
     ConfirmSync,
     /// Overlay dialog: Shift+M merge into upstream ([f]f / [s]quash)
     ConfirmMerge,
+    /// Overlay dialog: selecting a new upstream branch for an existing task
+    ChangeUpstream { branches: Vec<String>, selected: usize },
 }
 
 pub struct App {
@@ -185,6 +187,7 @@ impl App {
             Mode::ConfirmDelete => self.handle_confirm_delete_key(key)?,
             Mode::ConfirmSync => self.handle_confirm_sync_key(key)?,
             Mode::ConfirmMerge => self.handle_confirm_merge_key(key)?,
+            Mode::ChangeUpstream { .. } => self.handle_change_upstream_key(key)?,
         }
         Ok(())
     }
@@ -274,6 +277,27 @@ impl App {
                         self.mode = Mode::ConfirmSync;
                     } else {
                         self.last_error = Some("Stop the task before syncing".to_string());
+                    }
+                }
+            }
+            // Shift+U: change upstream (Stopped only)
+            KeyCode::Char('U') => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if task.status != crate::task::TaskStatus::Stopped {
+                        self.last_error = Some("Stop the task before changing upstream".to_string());
+                    } else if !task.has_run {
+                        self.last_error = Some("Launch the task at least once before changing upstream".to_string());
+                    } else {
+                        let branches = Task::list_upstream_candidates(&self.repo_root);
+                        if branches.is_empty() {
+                            self.last_error = Some("No eligible upstream branches found".to_string());
+                        } else {
+                            let current_upstream = &task.upstream;
+                            let selected = branches.iter()
+                                .position(|b| b == current_upstream)
+                                .unwrap_or(0);
+                            self.mode = Mode::ChangeUpstream { branches, selected };
+                        }
                     }
                 }
             }
@@ -549,6 +573,45 @@ impl App {
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                 self.mode = Mode::Tasks;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_change_upstream_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
+        let Mode::ChangeUpstream { branches, selected } = &mut self.mode else {
+            return Ok(());
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = Mode::Tasks;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if !branches.is_empty() {
+                    *selected = (*selected + 1) % branches.len();
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if !branches.is_empty() {
+                    *selected = selected.checked_sub(1).unwrap_or(branches.len() - 1);
+                }
+            }
+            KeyCode::Enter => {
+                let new_upstream = branches[*selected].clone();
+                self.mode = Mode::Tasks;
+                if let Some(task) = self.tasks.get_mut(self.selected_index) {
+                    let name = task.name.clone();
+                    match Task::set_upstream(&self.repo_root, &name, &new_upstream) {
+                        Ok(()) => {
+                            task.upstream = new_upstream;
+                            self.refresh_commits_ahead();
+                        }
+                        Err(e) => {
+                            self.last_error = Some(format!("Failed to set upstream: {e}"));
+                        }
+                    }
+                }
             }
             _ => {}
         }

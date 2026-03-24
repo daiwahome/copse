@@ -32,3 +32,7 @@ Claude Code には `--worktree` フラグが組み込まれており、worktree 
 ### git ネイティブ設計
 
 copse は標準的な git プリミティブ（ブランチ、tracking branch、worktree）を使用するため、全て `git` コマンドで直接確認・変更できる。`claude --worktree` は自動採番されたブランチとパスを使うため、ユーザーにとって意味が分かりにくい。
+
+## なぜタスクのリネームをサポートしないのか
+
+タスクのリネームには git ブランチ (`copse/<name>`) のリネームと worktree ディレクトリの移動が必要。`git branch -m` と `git worktree move` で技術的には可能だが、Claude Code の `--continue` セッションは worktree パスに紐づいている。リネーム後はセッション履歴が失われ、再開時に新しいセッションとして開始される。セッションの継続性は copse のタスクライフサイクルの中核機能であるため、タスクのリネームは意図的にサポートしていない。

@@ -8,7 +8,10 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, Event, KeyEventKind, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -23,6 +26,8 @@ pub struct Tui {
     event_rx: mpsc::Receiver<AppEvent>,
     /// When true, the input reader pauses polling (used during $EDITOR)
     input_paused: Arc<AtomicBool>,
+    /// Whether the kitty keyboard protocol was successfully enabled
+    keyboard_enhancement_enabled: bool,
 }
 
 impl Tui {
@@ -42,12 +47,22 @@ impl Tui {
                 return Err(e.into());
             }
         };
+        let keyboard_enhancement_enabled =
+            crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false)
+                && execute!(
+                    io::stdout(),
+                    PushKeyboardEnhancementFlags(
+                        KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    )
+                )
+                .is_ok();
         let (event_tx, event_rx) = mpsc::channel(256);
         Ok(Self {
             terminal,
             event_tx,
             event_rx,
             input_paused: Arc::new(AtomicBool::new(false)),
+            keyboard_enhancement_enabled,
         })
     }
 
@@ -242,6 +257,14 @@ impl Tui {
         // Return to alternate screen and resume input reader
         enable_raw_mode()?;
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
+        if self.keyboard_enhancement_enabled {
+            let _ = execute!(
+                self.terminal.backend_mut(),
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                )
+            );
+        }
         self.terminal.clear()?;
         self.input_paused.store(false, Ordering::Relaxed);
 
@@ -252,6 +275,9 @@ impl Tui {
 impl Drop for Tui {
     fn drop(&mut self) {
         // Always restore the terminal, even on panic
+        if self.keyboard_enhancement_enabled {
+            let _ = execute!(self.terminal.backend_mut(), PopKeyboardEnhancementFlags);
+        }
         let _ = disable_raw_mode();
         let _ = execute!(
             self.terminal.backend_mut(),

@@ -83,6 +83,17 @@ copse/src
       └── agent.rs   PseudoTerminal ウィジェット (tui-term)
 ```
 
+## 開発
+
+```sh
+cargo fmt --check             # フォーマットチェック
+cargo clippy -- -D warnings   # リント
+cargo test                    # テスト実行
+cargo build --release         # リリースビルド
+```
+
+これらのチェックは GitHub Actions により、すべての PR と `main` へのプッシュで自動実行される。
+
 ## ライセンス
 
 [MIT](../../LICENSE)

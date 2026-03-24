@@ -83,6 +83,17 @@ copse/src
       └── agent.rs   PseudoTerminal widget (tui-term)
 ```
 
+## Development
+
+```sh
+cargo fmt --check             # Check formatting
+cargo clippy -- -D warnings   # Lint
+cargo test                    # Run tests
+cargo build --release         # Release build
+```
+
+These checks run automatically via GitHub Actions on every pull request and push to `main`.
+
 ## License
 
 [MIT](LICENSE)

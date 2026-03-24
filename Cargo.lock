@@ -236,19 +236,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "confy"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8807c397789cbe02bbdb1a27ea5f345584132808697b2a3f957c829829ee4814"
-dependencies = [
- "etcetera",
- "lazy_static",
- "serde",
- "thiserror 2.0.18",
- "toml",
-]
-
-[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,14 +250,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "confy",
  "crossterm 0.28.1",
+ "etcetera",
  "nix 0.31.2",
  "portable-pty",
  "ratatui",
  "serde",
  "serde_json",
  "tokio",
+ "toml",
  "tui-term",
  "uuid",
  "vt100",

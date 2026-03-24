@@ -1,16 +1,16 @@
 # Configuration
 
-copse は [confy](https://github.com/rust-cli/confy) が管理する TOML ファイルに設定を保存する。
+copse は TOML ファイルに設定を保存する。
 
 ## 設定ファイル
 
-**パス**: `~/.config/copse/default-config.toml`
+**パス**: `~/.config/copse/config.toml`
 
 `--init` で設定ファイルを生成する:
 
 ```sh
 copse --init
-# → Created ~/.config/copse/default-config.toml
+# → Created ~/.config/copse/config.toml
 ```
 
 ファイルが既に存在する場合は上書きせずエラーになる。ファイルが存在しない場合、copse は全てのオプションにデフォルト値を使用する。
@@ -19,6 +19,25 @@ copse --init
 auto_commit = false
 auto_permissions = false
 permission_mode = "default"
+
+[color]
+cursor = { bg = "236" }
+cursor-blur = { fg = "252", bg = "234" }
+title-focus-tasks = { fg = "black", bg = "166" }
+title-focus-agent = { fg = "black", bg = "217" }
+title-focus-diff = { fg = "black", bg = "33" }
+title-blur = { fg = "black", bg = "240" }
+title-text-focus = { fg = "252", bg = "234" }
+title-text-blur = { fg = "245", bg = "234" }
+title-hints = { fg = "245", bg = "234" }
+search-result = { bg = "238" }
+diff-add = { fg = "green" }
+diff-del = { fg = "red" }
+diff-chunk = { fg = "cyan" }
+diff-header = { fg = "white" }
+diff-context = { fg = "white" }
+list-highlight = { fg = "166", bg = "234" }
+list-highlight-blur = { fg = "252", bg = "234" }
 ```
 
 ## オプション
@@ -43,6 +62,43 @@ permission_mode = "default"
 | `dontAsk`           | 許可されていない操作を黙ってスキップ                   |
 
 session 中に Claude Code 内でモードを変更することもできる（例: `/permissions`）。
+
+## カラーテーマ
+
+`[color]` セクションで UI の色をカスタマイズできる。各エントリは `fg`（前景色）、`bg`（背景色）を指定する。指定しないフィールドはデフォルト値が使われる。
+
+### 色の指定方法
+
+| 形式              | 例                           | 説明                                          |
+|-------------------|------------------------------|-----------------------------------------------|
+| 色名              | `"red"`, `"green"`, `"blue"` | 基本8色 + `"default"`（ターミナルデフォルト）   |
+| 256色インデックス   | `"166"`, `"234"`             | `0`〜`255` の数値文字列                        |
+
+利用可能な色名: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `default`
+
+### カラーエリア
+
+| キー                  | 説明                                         |
+|-----------------------|----------------------------------------------|
+| `cursor`              | フォーカス時のカーソル行                       |
+| `cursor-blur`         | フォーカス喪失時のカーソル行                    |
+| `title-focus-tasks`   | TASKS ステータスバー（フォーカス時）            |
+| `title-focus-agent`   | AGENT ステータスバー（フォーカス時）            |
+| `title-focus-diff`    | DIFF ステータスバー（フォーカス時）             |
+| `title-blur`          | ステータスバー（フォーカス喪失時）              |
+| `title-text-focus`    | ステータスバーのテキスト（フォーカス時）         |
+| `title-text-blur`     | ステータスバーのテキスト（フォーカス喪失時）     |
+| `title-hints`         | ステータスバーのキーヒント                      |
+| `search-result`       | 検索マッチのハイライト                         |
+| `diff-add`            | Diff の追加行                                 |
+| `diff-del`            | Diff の削除行                                 |
+| `diff-chunk`          | Diff の Hunk ヘッダ                           |
+| `diff-header`         | Diff のファイルヘッダ                          |
+| `diff-context`        | Diff のコンテキスト行                          |
+| `list-highlight`      | タスクリストの選択行（フォーカス時）             |
+| `list-highlight-blur` | タスクリストの選択行（フォーカス喪失時）         |
+
+不正な色名が指定された場合、起動時にステータスバーにワーニングが表示される。
 
 ## Auto-Commit
 

@@ -1,15 +1,15 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
 
+use crate::theme::Theme;
 use crate::diff::{DiffLineKind, DiffState};
 
 /// Render the diff view.
-pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: bool) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: bool, theme: &Theme) {
     let height = area.height as usize;
     if height == 0 || state.lines.is_empty() {
         return;
@@ -29,19 +29,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
 
             // Line content styling based on kind
             let (content_style, prefix) = match line.kind {
-                DiffLineKind::Added => (Style::default().fg(Color::Green), "+"),
-                DiffLineKind::Removed => (Style::default().fg(Color::Red), "-"),
-                DiffLineKind::Context => (Style::default().fg(Color::White), " "),
-                DiffLineKind::HunkHeader => (
-                    Style::default().fg(Color::Cyan),
-                    "",
-                ),
-                DiffLineKind::FileHeader => (
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                    "",
-                ),
+                DiffLineKind::Added => (theme.diff_add, "+"),
+                DiffLineKind::Removed => (theme.diff_del, "-"),
+                DiffLineKind::Context => (theme.diff_context, " "),
+                DiffLineKind::HunkHeader => (theme.diff_chunk, ""),
+                DiffLineKind::FileHeader => (theme.diff_header, ""),
             };
 
             // For headers, show the raw content; for code lines, show prefix + content
@@ -56,11 +48,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
 
             // Apply cursor and search match background highlights
             let final_style = if is_cursor && focused {
-                content_style.bg(Color::Indexed(236))
+                content_style.patch(theme.cursor)
             } else if is_cursor {
-                Style::default().fg(Color::Indexed(252)).bg(Color::Indexed(234))
+                theme.cursor_blur
             } else if is_search_match {
-                content_style.bg(Color::Indexed(238))
+                content_style.patch(theme.search_result)
             } else {
                 content_style
             };

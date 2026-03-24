@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState},
     Frame,
@@ -66,15 +66,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         .collect();
 
     // tig-style: no border, no highlight symbol — selected row shown by bg color only
+    let theme = &app.theme;
     let highlight = if focused {
-        Style::default()
-            .fg(Color::Indexed(166))
-            .bg(Color::Indexed(234))
-            .add_modifier(Modifier::BOLD)
+        theme.list_highlight
     } else {
-        Style::default()
-            .fg(Color::Indexed(252))
-            .bg(Color::Indexed(234))
+        theme.list_highlight_blur
     };
     let list = List::new(items)
         .block(Block::default())

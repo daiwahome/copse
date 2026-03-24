@@ -26,11 +26,7 @@ pub struct DiffState {
 
 impl DiffState {
     /// Run `git diff <upstream>..<branch>` and parse the output.
-    pub fn from_task(
-        repo_root: &Path,
-        name: &str,
-        upstream: &str,
-    ) -> anyhow::Result<Self> {
+    pub fn from_task(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<Self> {
         let raw = get_diff(repo_root, name, upstream)?;
         Ok(Self::parse(&raw, name.to_string()))
     }
@@ -154,7 +150,11 @@ impl DiffState {
             return false;
         };
         let is_anchor = pattern.starts_with('^');
-        let needle = if is_anchor { &pattern[1..] } else { pattern.as_str() };
+        let needle = if is_anchor {
+            &pattern[1..]
+        } else {
+            pattern.as_str()
+        };
         self.lines
             .get(line_index)
             .map(|l| line_matches(l, needle, is_anchor))

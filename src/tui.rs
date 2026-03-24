@@ -47,15 +47,13 @@ impl Tui {
                 return Err(e.into());
             }
         };
-        let keyboard_enhancement_enabled =
-            crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false)
-                && execute!(
-                    io::stdout(),
-                    PushKeyboardEnhancementFlags(
-                        KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    )
-                )
-                .is_ok();
+        let keyboard_enhancement_enabled = crossterm::terminal::supports_keyboard_enhancement()
+            .unwrap_or(false)
+            && execute!(
+                io::stdout(),
+                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+            )
+            .is_ok();
         let (event_tx, event_rx) = mpsc::channel(256);
         Ok(Self {
             terminal,
@@ -107,9 +105,8 @@ impl Tui {
                 }
                 Ok(false) => {}
                 Err(e) => {
-                    let _ = tx.blocking_send(AppEvent::FatalError(format!(
-                        "Input poll error: {e}"
-                    )));
+                    let _ =
+                        tx.blocking_send(AppEvent::FatalError(format!("Input poll error: {e}")));
                     break;
                 }
             }
@@ -193,14 +190,20 @@ impl Tui {
         let mut result = (|| -> anyhow::Result<()> {
             // Build commit message template (rebase -i squash style)
             let log_output = std::process::Command::new("git")
-                .args(["log", "--reverse", "--format=----%n%B", &format!("{upstream}..{branch}")])
+                .args([
+                    "log",
+                    "--reverse",
+                    "--format=----%n%B",
+                    &format!("{upstream}..{branch}"),
+                ])
                 .current_dir(repo_root)
                 .output();
             let raw = log_output
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
                 .unwrap_or_default();
 
-            let commits: Vec<&str> = raw.split("----\n")
+            let commits: Vec<&str> = raw
+                .split("----\n")
                 .filter(|s| !s.trim().is_empty())
                 .collect();
             let count = commits.len();
@@ -212,10 +215,7 @@ impl Tui {
                 } else {
                     format!("* This is the commit message #{}:", i + 1)
                 };
-                msg.push_str(&format!(
-                    "\n{header}\n\n{}\n",
-                    body.trim()
-                ));
+                msg.push_str(&format!("\n{header}\n\n{}\n", body.trim()));
             }
 
             // Stage all task branch changes onto upstream
@@ -224,7 +224,10 @@ impl Tui {
                 .current_dir(&upstream_wt)
                 .output()?;
             if !out.status.success() {
-                anyhow::bail!("merge --squash failed: {}", String::from_utf8_lossy(&out.stderr));
+                anyhow::bail!(
+                    "merge --squash failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
             }
 
             // Write template and commit with $EDITOR
@@ -232,7 +235,13 @@ impl Tui {
             std::fs::write(&tmp, &msg)?;
 
             let commit_status = std::process::Command::new("git")
-                .args(["commit", "-e", "-F", tmp.to_str().unwrap_or(""), "--cleanup=strip"])
+                .args([
+                    "commit",
+                    "-e",
+                    "-F",
+                    tmp.to_str().unwrap_or(""),
+                    "--cleanup=strip",
+                ])
                 .current_dir(&upstream_wt)
                 .stdin(std::process::Stdio::inherit())
                 .stdout(std::process::Stdio::inherit())
@@ -267,7 +276,10 @@ impl Tui {
                 .output();
             match out {
                 Ok(o) if !o.status.success() => {
-                    result = Err(anyhow::anyhow!("reset --hard failed: {}", String::from_utf8_lossy(&o.stderr)));
+                    result = Err(anyhow::anyhow!(
+                        "reset --hard failed: {}",
+                        String::from_utf8_lossy(&o.stderr)
+                    ));
                 }
                 Err(e) => {
                     result = Err(anyhow::anyhow!("reset --hard failed: {e}"));
@@ -282,9 +294,7 @@ impl Tui {
         if self.keyboard_enhancement_enabled {
             let _ = execute!(
                 self.terminal.backend_mut(),
-                PushKeyboardEnhancementFlags(
-                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                )
+                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
             );
         }
         self.terminal.clear()?;

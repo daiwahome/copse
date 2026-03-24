@@ -10,7 +10,10 @@ pub enum AppEvent {
     /// Task process has exited
     TaskExited(TaskId),
     /// Terminal was resized
-    Resize { cols: u16, rows: u16 },
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
     /// A new task entry was created (Stopped, no worktree yet)
     TaskCreated(crate::task::Task),
     /// A stopped task was resumed; replace the matching task by ID
@@ -23,7 +26,10 @@ pub enum AppEvent {
     /// Result of an async git operation: Ok(()) to refresh, Err(msg) for error
     GitOpResult(Result<(), String>),
     /// Squash merge requested — needs alternate screen exit for $EDITOR
-    SquashMerge { name: String, upstream: String },
+    SquashMerge {
+        name: String,
+        upstream: String,
+    },
     /// Unrecoverable error in a background task; triggers shutdown
     FatalError(String),
 }

@@ -32,9 +32,8 @@ impl Theme {
     /// Build a Theme from ColorConfig, collecting warnings for invalid values.
     pub fn from_color_config(cc: &ColorConfig) -> (Self, Vec<String>) {
         let mut warnings = Vec::new();
-        let mut convert = |key: &str, entry: &ColorEntry| -> Style {
-            convert_entry(key, entry, &mut warnings)
-        };
+        let mut convert =
+            |key: &str, entry: &ColorEntry| -> Style { convert_entry(key, entry, &mut warnings) };
         let theme = Self {
             cursor: convert("cursor", &cc.cursor),
             cursor_blur: convert("cursor-blur", &cc.cursor_blur),

@@ -15,7 +15,11 @@ use clap::Parser;
 use tui::Tui;
 
 #[derive(Parser)]
-#[command(name = "copse", version, about = "TUI for running Claude Code tasks in parallel using git worktrees")]
+#[command(
+    name = "copse",
+    version,
+    about = "TUI for running Claude Code tasks in parallel using git worktrees"
+)]
 struct Cli {
     /// Generate the default config file at ~/.config/copse/default-config.toml
     #[arg(long)]
@@ -57,13 +61,23 @@ async fn main() -> anyhow::Result<()> {
 
     let mut tui = Tui::new()?;
     let event_tx = tui.event_sender();
-    let mut app = App::new(repo_root.clone(), worktree_base_dir.clone(), config, event_tx);
+    let mut app = App::new(
+        repo_root.clone(),
+        worktree_base_dir.clone(),
+        config,
+        event_tx,
+    );
 
     // Populate existing copse/* branches as Stopped tasks on startup
     let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
     for name in task::Task::list_existing(&repo_root) {
-        app.tasks
-            .push(task::Task::from_existing(name, &repo_root, &worktree_base_dir, rows, cols));
+        app.tasks.push(task::Task::from_existing(
+            name,
+            &repo_root,
+            &worktree_base_dir,
+            rows,
+            cols,
+        ));
     }
 
     tui.spawn_input_reader();
@@ -90,4 +104,3 @@ fn find_repo_root() -> anyhow::Result<PathBuf> {
     let path = String::from_utf8(output.stdout)?.trim().to_string();
     Ok(PathBuf::from(path))
 }
-

@@ -5,8 +5,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::theme::Theme;
 use crate::diff::{DiffLineKind, DiffState};
+use crate::theme::Theme;
 
 /// Render the diff view.
 pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: bool, theme: &Theme) {
@@ -61,7 +61,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
                 // Pad to full width so background color extends to the right edge
                 let width = area.width as usize;
                 let pad = width.saturating_sub(display_text.len());
-                Line::from(Span::styled(format!("{display_text}{}", " ".repeat(pad)), final_style))
+                Line::from(Span::styled(
+                    format!("{display_text}{}", " ".repeat(pad)),
+                    final_style,
+                ))
             } else {
                 Line::from(Span::styled(display_text, final_style))
             }

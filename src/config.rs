@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use etcetera::BaseStrategy;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+use crate::keybind::RawKeyBindings;
 
 fn config_path() -> anyhow::Result<PathBuf> {
     let strategy = etcetera::choose_base_strategy()
@@ -9,13 +11,15 @@ fn config_path() -> anyhow::Result<PathBuf> {
     Ok(strategy.config_dir().join("copse").join("config.toml"))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub auto_commit: bool,
     pub auto_permissions: bool,
     pub permission_mode: String,
     #[serde(default)]
     pub color: ColorConfig,
+    #[serde(default)]
+    pub keys: RawKeyBindings,
 }
 
 impl Default for Config {
@@ -25,6 +29,7 @@ impl Default for Config {
             auto_permissions: false,
             permission_mode: "default".to_string(),
             color: ColorConfig::default(),
+            keys: RawKeyBindings::default(),
         }
     }
 }
@@ -95,12 +100,14 @@ impl Config {
             out.push_str(&format!("{key} = {}\n", entry.to_inline_toml()));
         }
 
+        out.push_str(&crate::keybind::default_keys_toml());
+
         out
     }
 }
 
 /// A single color entry in the config: foreground, background, and attributes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ColorEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fg: Option<String>,
@@ -144,7 +151,7 @@ impl ColorEntry {
 }
 
 /// Color configuration matching the Theme struct fields, using kebab-case TOML keys.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ColorConfig {
     #[serde(default = "default_cursor")]
     pub cursor: ColorEntry,

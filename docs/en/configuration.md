@@ -38,6 +38,44 @@ diff-header = { fg = "white" }
 diff-context = { fg = "white" }
 list-highlight = { fg = "166", bg = "234" }
 list-highlight-blur = { fg = "252", bg = "234" }
+
+[keys.global]
+focus-toggle = ["Ctrl-W"]
+
+[keys.tasks]
+new-task = ["n"]
+move-down = ["j", "Down"]
+move-up = ["k", "Up"]
+open = ["Enter"]
+show-diff = ["d"]
+merge = ["M"]
+sync = ["S"]
+change-upstream = ["U"]
+delete = ["!"]
+refresh = ["R"]
+fullscreen = ["O", "Ctrl-O"]
+quit = ["q", "Q"]
+kill = ["Ctrl-K"]
+close-children = ["Ctrl-Q"]
+
+[keys.diff]
+move-down = ["j", "Down"]
+move-up = ["k", "Up"]
+next-hunk = ["@"]
+search = ["/"]
+search-next = ["n"]
+search-prev = ["N"]
+refresh = ["R"]
+fullscreen = ["O", "Ctrl-O"]
+close = ["q", "Esc", "Ctrl-Q"]
+page-up = ["Ctrl-B"]
+page-down = ["Ctrl-F"]
+
+[keys.agent]
+fullscreen = ["Ctrl-O"]
+close = ["Ctrl-Q"]
+page-up = ["Ctrl-B"]
+page-down = ["Ctrl-F"]
 ```
 
 ## Options
@@ -99,6 +137,48 @@ Available color names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cy
 | `list-highlight-blur` | Task list selected row (unfocused)           |
 
 Invalid color names show a warning in the status bar on startup.
+
+## Key Bindings
+
+The `[keys.*]` sections let you customize key bindings per view. Each action maps to an array of key strings.
+
+### Override Behavior
+
+Only the actions you specify are overridden; unspecified actions keep their defaults. For example, if you only set `move-down` in `[keys.tasks]`, all other task view bindings remain unchanged.
+
+Setting an action to an empty array `[]` disables that action entirely.
+
+Dialog key bindings (confirm dialogs, text input, etc.) are not configurable.
+
+### Key Notation
+
+| Format       | Example                                                                           | Description                   |
+|--------------|-----------------------------------------------------------------------------------|-------------------------------|
+| Single char  | `"a"`, `"O"`, `"!"`, `"/"`                                                       | Lowercase, uppercase, symbol  |
+| Ctrl combo   | `"Ctrl-O"`, `"Ctrl-W"`                                                           | Control + key                 |
+| Named key    | `"Enter"`, `"Esc"`, `"Tab"`                                                      | Special keys                  |
+| Arrow key    | `"Up"`, `"Down"`, `"Left"`, `"Right"`                                            | Arrow keys                    |
+| Function key | `"F1"` .. `"F12"`                                                                 | Function keys                 |
+| Other        | `"Backspace"`, `"Delete"`, `"Space"`, `"PageUp"`, `"PageDown"`, `"Home"`, `"End"` | Other special keys            |
+
+### Views
+
+| Section         | Description                                                      |
+|-----------------|------------------------------------------------------------------|
+| `[keys.global]` | Bindings active in all views (checked before view-specific ones) |
+| `[keys.tasks]`  | Task list view                                                   |
+| `[keys.diff]`   | Diff view                                                        |
+| `[keys.agent]`  | Agent (PTY) view — unbound keys are forwarded to the PTY process |
+
+### Example
+
+```toml
+[keys.tasks]
+move-down = ["j"]       # remove Down arrow from move-down
+fullscreen = ["O", "Ctrl-O", "F11"]  # add F11
+```
+
+Invalid key strings or unknown action names show a warning in the status bar on startup.
 
 ## Auto-Commit
 

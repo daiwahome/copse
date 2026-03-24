@@ -38,6 +38,44 @@ diff-header = { fg = "white" }
 diff-context = { fg = "white" }
 list-highlight = { fg = "166", bg = "234" }
 list-highlight-blur = { fg = "252", bg = "234" }
+
+[keys.global]
+focus-toggle = ["Ctrl-W"]
+
+[keys.tasks]
+new-task = ["n"]
+move-down = ["j", "Down"]
+move-up = ["k", "Up"]
+open = ["Enter"]
+show-diff = ["d"]
+merge = ["M"]
+sync = ["S"]
+change-upstream = ["U"]
+delete = ["!"]
+refresh = ["R"]
+fullscreen = ["O", "Ctrl-O"]
+quit = ["q", "Q"]
+kill = ["Ctrl-K"]
+close-children = ["Ctrl-Q"]
+
+[keys.diff]
+move-down = ["j", "Down"]
+move-up = ["k", "Up"]
+next-hunk = ["@"]
+search = ["/"]
+search-next = ["n"]
+search-prev = ["N"]
+refresh = ["R"]
+fullscreen = ["O", "Ctrl-O"]
+close = ["q", "Esc", "Ctrl-Q"]
+page-up = ["Ctrl-B"]
+page-down = ["Ctrl-F"]
+
+[keys.agent]
+fullscreen = ["Ctrl-O"]
+close = ["Ctrl-Q"]
+page-up = ["Ctrl-B"]
+page-down = ["Ctrl-F"]
 ```
 
 ## オプション
@@ -99,6 +137,48 @@ session 中に Claude Code 内でモードを変更することもできる（�
 | `list-highlight-blur` | タスクリストの選択行（フォーカス喪失時）         |
 
 不正な色名が指定された場合、起動時にステータスバーにワーニングが表示される。
+
+## キーバインド
+
+`[keys.*]` セクションでビューごとにキーバインドをカスタマイズできる。各アクションにキー文字列の配列をマッピングする。
+
+### 上書きの挙動
+
+指定したアクションのみが上書きされ、指定しなかったアクションはデフォルトのまま維持される。例えば `[keys.tasks]` で `move-down` のみを設定した場合、他のタスクビューのバインドはそのまま使える。
+
+アクションに空配列 `[]` を設定するとそのアクションのキーバインドが無効になる。
+
+ダイアログのキーバインド（確認ダイアログ、テキスト入力など）は設定対象外。
+
+### キーの表記
+
+| 形式               | 例                                                                                  | 説明                 |
+|--------------------|-------------------------------------------------------------------------------------|----------------------|
+| 単一文字           | `"a"`, `"O"`, `"!"`, `"/"`                                                         | 小文字、大文字、記号 |
+| Ctrl 組み合わせ    | `"Ctrl-O"`, `"Ctrl-W"`                                                             | Control + キー       |
+| 名前付きキー       | `"Enter"`, `"Esc"`, `"Tab"`                                                        | 特殊キー             |
+| 矢印キー           | `"Up"`, `"Down"`, `"Left"`, `"Right"`                                              | 矢印キー             |
+| ファンクションキー | `"F1"` .. `"F12"`                                                                   | ファンクションキー   |
+| その他             | `"Backspace"`, `"Delete"`, `"Space"`, `"PageUp"`, `"PageDown"`, `"Home"`, `"End"`   | その他の特殊キー     |
+
+### ビュー
+
+| セクション        | 説明                                                                            |
+|-------------------|---------------------------------------------------------------------------------|
+| `[keys.global]`   | 全ビューで有効（ビュー固有のバインドより先にチェックされる）                     |
+| `[keys.tasks]`    | タスクリストビュー                                                              |
+| `[keys.diff]`     | Diff ビュー                                                                     |
+| `[keys.agent]`    | Agent (PTY) ビュー — バインドされていないキーは PTY プロセスに転送              |
+
+### 設定例
+
+```toml
+[keys.tasks]
+move-down = ["j"]       # Down 矢印キーを move-down から外す
+fullscreen = ["O", "Ctrl-O", "F11"]  # F11 を追加
+```
+
+不正なキー文字列や不明なアクション名が指定された場合、起動時にステータスバーにワーニングが表示される。
 
 ## Auto-Commit
 

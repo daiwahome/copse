@@ -33,6 +33,10 @@ pub struct Task {
     pub worktree_path: PathBuf,
     /// Parses ANSI sequences and holds the screen buffer
     pub parser: Arc<Mutex<vt100::Parser>>,
+    /// Cached: whether Claude appears to be waiting for user input
+    pub waiting_for_input: bool,
+    /// True when PTY output has arrived since last `update_waiting_status` call
+    pub waiting_status_dirty: bool,
     /// Scrollback offset for the agent view (0 = live view)
     pub scroll_offset: usize,
     /// Write end of the PTY (sends keyboard input). None while Stopped.
@@ -52,6 +56,42 @@ impl Task {
 
     pub fn is_stopped(&self) -> bool {
         self.status == TaskStatus::Stopped
+    }
+
+    /// Re-scan PTY screen and update the cached `waiting_for_input` flag.
+    pub fn update_waiting_status(&mut self) {
+        if !self.is_running() {
+            self.waiting_for_input = false;
+            return;
+        }
+        let screen = self
+            .parser
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .screen()
+            .clone();
+        let rows = screen.size().0 as usize;
+        let cols = screen.size().1 as usize;
+
+        let mut lines: Vec<String> = Vec::new();
+        for r in (0..rows).rev() {
+            let row_text: String = (0..cols)
+                .filter_map(|c| {
+                    screen
+                        .cell(r as u16, c as u16)
+                        .map(|cell| cell.contents().to_string())
+                })
+                .collect();
+            let trimmed = row_text.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            lines.push(trimmed);
+            if lines.len() >= 5 {
+                break;
+            }
+        }
+        self.waiting_for_input = detect_waiting(&lines);
     }
 
     /// Derive the worktree path for a given task name.
@@ -348,6 +388,8 @@ impl Task {
             has_run,
             commits_ahead,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
+            waiting_for_input: false,
+            waiting_status_dirty: false,
             scroll_offset: 0,
             writer: None,
             _reader_task: None,
@@ -449,6 +491,8 @@ impl Task {
             commits_ahead: None,
             worktree_path,
             parser,
+            waiting_for_input: false,
+            waiting_status_dirty: false,
             scroll_offset: 0,
             writer: Some(writer),
             _reader_task: Some(reader_task),
@@ -660,5 +704,83 @@ impl Task {
             killer.kill().map_err(|e| anyhow::anyhow!("kill failed: {e}"))?;
         }
         Ok(())
+    }
+}
+
+/// Pure pattern-matching logic for detecting whether Claude is waiting for input.
+/// Inspects the last few non-empty PTY lines.
+///
+/// - "esc to interrupt" / "ctrl+c to interrupt" → busy (not waiting)
+/// - "esc to cancel" / prompt `❯` at line start → waiting for input
+fn detect_waiting(lines: &[String]) -> bool {
+    let mut has_waiting_indicator = false;
+    for line in lines {
+        let lower = line.to_lowercase();
+        if lower.contains("esc to interrupt") || lower.contains("ctrl+c to interrupt") {
+            return false;
+        }
+        if !has_waiting_indicator
+            && (lower.contains("esc to cancel") || line.starts_with('❯'))
+        {
+            has_waiting_indicator = true;
+        }
+    }
+    has_waiting_indicator
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(strs: &[&str]) -> Vec<String> {
+        strs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn busy_when_esc_to_interrupt() {
+        let l = lines(&["Reading file...", "esc to interrupt"]);
+        assert!(!detect_waiting(&l));
+    }
+
+    #[test]
+    fn busy_when_ctrl_c_to_interrupt() {
+        let l = lines(&["Working...", "ctrl+c to interrupt"]);
+        assert!(!detect_waiting(&l));
+    }
+
+    #[test]
+    fn busy_takes_priority_over_prompt() {
+        let l = lines(&["❯", "esc to interrupt"]);
+        assert!(!detect_waiting(&l));
+    }
+
+    #[test]
+    fn waiting_when_esc_to_cancel() {
+        let l = lines(&["Do you want to proceed?", "esc to cancel"]);
+        assert!(detect_waiting(&l));
+    }
+
+    #[test]
+    fn waiting_when_prompt() {
+        let l = lines(&["❯"]);
+        assert!(detect_waiting(&l));
+    }
+
+    #[test]
+    fn not_waiting_when_empty() {
+        let l: Vec<String> = vec![];
+        assert!(!detect_waiting(&l));
+    }
+
+    #[test]
+    fn not_waiting_without_indicators() {
+        let l = lines(&["some output", "more output"]);
+        assert!(!detect_waiting(&l));
+    }
+
+    #[test]
+    fn gt_no_longer_triggers_waiting() {
+        let l = lines(&["> quoted text in output"]);
+        assert!(!detect_waiting(&l));
     }
 }

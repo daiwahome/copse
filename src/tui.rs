@@ -123,6 +123,7 @@ impl Tui {
         refresh_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
+            app.flush_waiting_status();
             self.terminal.draw(|frame| {
                 ui::render(frame, app);
             })?;

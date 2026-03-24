@@ -132,7 +132,7 @@ impl Tui {
                 event = self.event_rx.recv() => {
                     match event {
                         Some(AppEvent::SquashMerge { name, upstream }) => {
-                            let result = self.execute_squash_merge(&app.repo_root, &app.git_common_dir, &name, &upstream);
+                            let result = self.execute_squash_merge(&app.repo_root, &app.worktree_base_dir, &name, &upstream);
                             if let Err(e) = result {
                                 app.last_error = Some(format!("Squash merge failed: {e}"));
                             }
@@ -166,14 +166,14 @@ impl Tui {
     fn execute_squash_merge(
         &mut self,
         repo_root: &std::path::Path,
-        git_common_dir: &std::path::Path,
+        worktree_base_dir: &std::path::Path,
         name: &str,
         upstream: &str,
     ) -> anyhow::Result<()> {
         use crate::task::Task;
 
         let branch = Task::branch_name(name);
-        let task_wt = Task::worktree_path_for(&git_common_dir.to_path_buf(), name);
+        let task_wt = Task::worktree_path_for(worktree_base_dir, name);
         let (upstream_wt, switched) = match Task::find_branch_worktree(repo_root, upstream) {
             Ok(wt) => (wt, false),
             Err(_) => {

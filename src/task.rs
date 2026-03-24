@@ -7,6 +7,8 @@ use std::{
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use tokio::{sync::mpsc, task::JoinHandle};
 
+use etcetera::BaseStrategy;
+
 use crate::config::Config;
 use crate::event::{AppEvent, TaskId};
 
@@ -95,11 +97,8 @@ impl Task {
     }
 
     /// Derive the worktree path for a given task name.
-    /// Worktrees live at `<git_common_dir>/copse-worktrees/<name>`.
-    /// Using the common .git dir (not repo_root/.git) ensures the path is
-    /// stable even when copse runs from inside a worktree.
-    pub fn worktree_path_for(git_common_dir: &Path, name: &str) -> PathBuf {
-        git_common_dir.join("copse-worktrees").join(name)
+    pub fn worktree_path_for(worktree_base_dir: &Path, name: &str) -> PathBuf {
+        worktree_base_dir.join(name)
     }
 
     /// Branch name used for a task: `copse/<name>`
@@ -111,8 +110,8 @@ impl Task {
     /// If the branch already exists (resume case) the worktree is re-added on
     /// top of the existing branch; the branch itself is never recreated.
     /// For new branches, forks from `upstream` and sets it as the tracking branch.
-    async fn ensure_worktree(repo_root: &Path, git_common_dir: &Path, name: &str, upstream: &str) -> anyhow::Result<PathBuf> {
-        let worktree_path = Self::worktree_path_for(git_common_dir, name);
+    async fn ensure_worktree(repo_root: &Path, worktree_base_dir: &Path, name: &str, upstream: &str) -> anyhow::Result<PathBuf> {
+        let worktree_path = Self::worktree_path_for(worktree_base_dir, name);
         let branch = Self::branch_name(name);
         let repo_root = repo_root.to_path_buf();
         let upstream = upstream.to_string();
@@ -365,23 +364,23 @@ impl Task {
 
     /// Construct a brand-new Task in Stopped state.
     /// No branch or worktree is created yet; that happens on first launch.
-    pub fn new_stopped(name: String, upstream: String, git_common_dir: &Path, rows: u16, cols: u16) -> Self {
-        Self::make_placeholder(name, upstream, false, None, git_common_dir, rows, cols)
+    pub fn new_stopped(name: String, upstream: String, worktree_base_dir: &Path, rows: u16, cols: u16) -> Self {
+        Self::make_placeholder(name, upstream, false, None, worktree_base_dir, rows, cols)
     }
 
     /// Construct a placeholder Task in Stopped state for an existing branch,
     /// without spawning any process. Reads upstream from git tracking branch.
-    pub fn from_existing(name: String, repo_root: &Path, git_common_dir: &Path, rows: u16, cols: u16) -> Self {
+    pub fn from_existing(name: String, repo_root: &Path, worktree_base_dir: &Path, rows: u16, cols: u16) -> Self {
         let upstream = Self::load_upstream(repo_root, &name)
             .unwrap_or_else(|| "HEAD".to_string());
         let commits_ahead = Self::compute_commits_ahead(repo_root, &name, &upstream);
-        Self::make_placeholder(name, upstream, true, commits_ahead, git_common_dir, rows, cols)
+        Self::make_placeholder(name, upstream, true, commits_ahead, worktree_base_dir, rows, cols)
     }
 
-    fn make_placeholder(name: String, upstream: String, has_run: bool, commits_ahead: Option<usize>, git_common_dir: &Path, rows: u16, cols: u16) -> Self {
+    fn make_placeholder(name: String, upstream: String, has_run: bool, commits_ahead: Option<usize>, worktree_base_dir: &Path, rows: u16, cols: u16) -> Self {
         Task {
             id: uuid::Uuid::new_v4(),
-            worktree_path: Self::worktree_path_for(git_common_dir, &name),
+            worktree_path: Self::worktree_path_for(worktree_base_dir, &name),
             name,
             upstream,
             status: TaskStatus::Stopped,
@@ -407,7 +406,7 @@ impl Task {
         upstream: String,
         has_run: bool,
         repo_root: PathBuf,
-        git_common_dir: PathBuf,
+        worktree_base_dir: PathBuf,
         config: Config,
         rows: u16,
         cols: u16,
@@ -415,7 +414,7 @@ impl Task {
     ) -> anyhow::Result<Self> {
 
         // Ensure the worktree (and branch) exist before launching claude
-        let worktree_path = Self::ensure_worktree(&repo_root, &git_common_dir, &name, &upstream).await?;
+        let worktree_path = Self::ensure_worktree(&repo_root, &worktree_base_dir, &name, &upstream).await?;
 
         // Set up .claude/settings.local.json based on config
         let wp = worktree_path.clone();
@@ -502,8 +501,8 @@ impl Task {
     }
 
     /// Delete the task: remove the worktree and delete the branch.
-    pub fn delete_task(repo_root: &Path, git_common_dir: &Path, name: &str) -> anyhow::Result<()> {
-        let worktree_path = Self::worktree_path_for(git_common_dir, name);
+    pub fn delete_task(repo_root: &Path, worktree_base_dir: &Path, name: &str) -> anyhow::Result<()> {
+        let worktree_path = Self::worktree_path_for(worktree_base_dir, name);
         let branch = Self::branch_name(name);
 
         // Remove worktree
@@ -542,8 +541,8 @@ impl Task {
     }
 
     /// Sync task branch to upstream: reset --hard inside the worktree.
-    pub fn sync_from_upstream(repo_root: &Path, git_common_dir: &Path, name: &str, upstream: &str) -> anyhow::Result<()> {
-        let worktree_path = Self::worktree_path_for(git_common_dir, name);
+    pub fn sync_from_upstream(repo_root: &Path, worktree_base_dir: &Path, name: &str, upstream: &str) -> anyhow::Result<()> {
+        let worktree_path = Self::worktree_path_for(worktree_base_dir, name);
 
         // Resolve upstream to a commit hash
         let out = std::process::Command::new("git")
@@ -707,6 +706,74 @@ impl Task {
     }
 }
 
+/// Compute the worktree base directory for a repository.
+/// Uses XDG data directory with a ghq-style repo identifier.
+/// Example: `~/.local/share/copse/worktrees/github.com/owner/repo`
+pub fn worktree_base_dir(repo_root: &Path) -> anyhow::Result<PathBuf> {
+    let strategy = etcetera::base_strategy::Xdg::new()
+        .map_err(|e| anyhow::anyhow!("Failed to determine XDG data directory: {e}"))?;
+    let data_dir = strategy.data_dir();
+    Ok(data_dir.join("copse").join("worktrees").join(repo_id(repo_root)))
+}
+
+/// Derive a ghq-style repository identifier from the origin remote URL.
+/// Falls back to the directory name of `repo_root` if no origin remote is configured.
+fn repo_id(repo_root: &Path) -> PathBuf {
+    if let Some(url) = origin_url(repo_root) {
+        if let Some(parsed) = parse_remote_url(&url) {
+            return parsed;
+        }
+    }
+    // Fallback: use the directory name
+    PathBuf::from(
+        repo_root
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "unknown".to_string()),
+    )
+}
+
+fn origin_url(repo_root: &Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !url.is_empty() { Some(url) } else { None }
+    } else {
+        None
+    }
+}
+
+/// Parse a git remote URL into a ghq-style path (e.g. `github.com/owner/repo`).
+/// Supports SSH (`git@host:owner/repo.git`) and HTTPS (`https://host/owner/repo.git`).
+fn parse_remote_url(url: &str) -> Option<PathBuf> {
+    let path_str = if let Some(rest) = url.strip_prefix("git@") {
+        // SSH: git@github.com:owner/repo.git
+        rest.replacen(':', "/", 1)
+    } else if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("ssh://") {
+        // HTTPS/SSH: https://github.com/owner/repo.git
+        let after_scheme = url.split("://").nth(1)?;
+        // Strip user@ prefix (e.g. ssh://git@github.com/...)
+        match after_scheme.split_once('@') {
+            Some((_, rest)) => rest.to_string(),
+            None => after_scheme.to_string(),
+        }
+    } else {
+        return None;
+    };
+    // Strip trailing .git
+    let path_str = path_str.strip_suffix(".git").unwrap_or(&path_str);
+    // Strip trailing /
+    let path_str = path_str.strip_suffix('/').unwrap_or(path_str);
+    if path_str.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(path_str))
+}
+
 /// Pure pattern-matching logic for detecting whether Claude is waiting for input.
 /// Inspects the last few non-empty PTY lines.
 ///
@@ -782,5 +849,42 @@ mod tests {
     fn gt_no_longer_triggers_waiting() {
         let l = lines(&["> quoted text in output"]);
         assert!(!detect_waiting(&l));
+    }
+
+    #[test]
+    fn parse_ssh_remote_url() {
+        assert_eq!(
+            parse_remote_url("git@github.com:daiwahome/copse.git"),
+            Some(PathBuf::from("github.com/daiwahome/copse"))
+        );
+    }
+
+    #[test]
+    fn parse_https_remote_url() {
+        assert_eq!(
+            parse_remote_url("https://github.com/daiwahome/copse.git"),
+            Some(PathBuf::from("github.com/daiwahome/copse"))
+        );
+    }
+
+    #[test]
+    fn parse_https_remote_url_without_dot_git() {
+        assert_eq!(
+            parse_remote_url("https://github.com/daiwahome/copse"),
+            Some(PathBuf::from("github.com/daiwahome/copse"))
+        );
+    }
+
+    #[test]
+    fn parse_ssh_scheme_remote_url() {
+        assert_eq!(
+            parse_remote_url("ssh://git@github.com/daiwahome/copse.git"),
+            Some(PathBuf::from("github.com/daiwahome/copse"))
+        );
+    }
+
+    #[test]
+    fn parse_invalid_remote_url() {
+        assert_eq!(parse_remote_url("not-a-url"), None);
     }
 }

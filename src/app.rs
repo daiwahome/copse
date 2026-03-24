@@ -72,10 +72,8 @@ pub struct App {
     pub view_stack: Vec<ChildView>,
     pub should_quit: bool,
     pub repo_root: std::path::PathBuf,
-    /// The common .git directory (shared across all worktrees).
-    /// Used to place copse-worktrees/ in a stable location even when
-    /// copse itself is running from inside a worktree.
-    pub git_common_dir: std::path::PathBuf,
+    /// Base directory for worktrees (XDG data dir / copse / worktrees / <repo_id>).
+    pub worktree_base_dir: std::path::PathBuf,
     pub config: Config,
     pub event_tx: tokio::sync::mpsc::Sender<AppEvent>,
     /// Error message to display in the status bar (cleared on next keypress)
@@ -95,7 +93,7 @@ pub struct App {
 impl App {
     pub fn new(
         repo_root: std::path::PathBuf,
-        git_common_dir: std::path::PathBuf,
+        worktree_base_dir: std::path::PathBuf,
         config: Config,
         event_tx: tokio::sync::mpsc::Sender<AppEvent>,
     ) -> Self {
@@ -114,7 +112,7 @@ impl App {
             view_stack: Vec::new(),
             should_quit: false,
             repo_root,
-            git_common_dir,
+            worktree_base_dir,
             config,
             event_tx,
             last_error,
@@ -406,7 +404,7 @@ impl App {
                 let upstream = branches[selected].clone();
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
                 let content_rows = rows.saturating_sub(1);
-                let task = Task::new_stopped(name, upstream, &self.git_common_dir, content_rows, cols);
+                let task = Task::new_stopped(name, upstream, &self.worktree_base_dir, content_rows, cols);
                 let _ = self.event_tx.try_send(AppEvent::TaskCreated(task));
             }
             _ => { self.dialog = Some(Dialog::NewTaskUpstream { name, branches, selected }); }
@@ -442,14 +440,14 @@ impl App {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let repo_root = self.repo_root.clone();
-                let git_common_dir = self.git_common_dir.clone();
+                let worktree_base_dir = self.worktree_base_dir.clone();
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let id = task.id;
                     let name = task.name.clone();
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
-                            Task::delete_task(&repo_root, &git_common_dir, &name)
+                            Task::delete_task(&repo_root, &worktree_base_dir, &name)
                         }).await;
                         match result {
                             Ok(Ok(())) => { let _ = event_tx.send(AppEvent::TaskDeleted(id)).await; }
@@ -469,14 +467,14 @@ impl App {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let repo_root = self.repo_root.clone();
-                let git_common_dir = self.git_common_dir.clone();
+                let worktree_base_dir = self.worktree_base_dir.clone();
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let name = task.name.clone();
                     let upstream = task.upstream.clone();
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
-                            Task::sync_from_upstream(&repo_root, &git_common_dir, &name, &upstream)
+                            Task::sync_from_upstream(&repo_root, &worktree_base_dir, &name, &upstream)
                         }).await;
                         match result {
                             Ok(Ok(())) => { let _ = event_tx.send(AppEvent::GitOpResult(Ok(()))).await; }
@@ -887,13 +885,13 @@ impl App {
         let has_run = task.has_run;
         let tx = self.event_tx.clone();
         let repo_root = self.repo_root.clone();
-        let git_common_dir = self.git_common_dir.clone();
+        let worktree_base_dir = self.worktree_base_dir.clone();
         let config = self.config.clone();
         let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
         let content_rows = rows.saturating_sub(1); // reserve 1 row for status bar
         let event_tx = self.event_tx.clone();
         tokio::spawn(async move {
-            let result = Task::spawn(id, name, upstream, has_run, repo_root, git_common_dir, config, content_rows, cols, tx)
+            let result = Task::spawn(id, name, upstream, has_run, repo_root, worktree_base_dir, config, content_rows, cols, tx)
                 .await
                 .map_err(|e| format!("Failed to resume task: {e}"));
             let _ = event_tx

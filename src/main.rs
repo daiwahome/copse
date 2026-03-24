@@ -38,11 +38,9 @@ async fn main() -> anyhow::Result<()> {
         )?;
     }
 
-    // Locate the repository root via git rev-parse --show-toplevel.
-    // Also resolve the common .git dir so worktrees are stored there
-    // (avoids path issues when copse itself runs inside a worktree).
+    // Locate the repository root and compute worktree base directory.
     let repo_root = find_repo_root()?;
-    let git_common_dir = find_git_common_dir()?;
+    let worktree_base_dir = task::worktree_base_dir(&repo_root)?;
     let config = config::Config::load()?;
 
     // Restore the terminal even on panic
@@ -59,13 +57,13 @@ async fn main() -> anyhow::Result<()> {
 
     let mut tui = Tui::new()?;
     let event_tx = tui.event_sender();
-    let mut app = App::new(repo_root.clone(), git_common_dir.clone(), config, event_tx);
+    let mut app = App::new(repo_root.clone(), worktree_base_dir.clone(), config, event_tx);
 
     // Populate existing copse/* branches as Stopped tasks on startup
     let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
     for name in task::Task::list_existing(&repo_root) {
         app.tasks
-            .push(task::Task::from_existing(name, &repo_root, &git_common_dir, rows, cols));
+            .push(task::Task::from_existing(name, &repo_root, &worktree_base_dir, rows, cols));
     }
 
     tui.spawn_input_reader();
@@ -93,20 +91,3 @@ fn find_repo_root() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
-/// Returns the common .git directory, which is shared across all worktrees.
-/// When copse runs inside a worktree, --show-toplevel returns the worktree
-/// path (which may be temporary), but --git-common-dir always points to the
-/// real .git directory in the main repository.
-fn find_git_common_dir() -> anyhow::Result<PathBuf> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--git-common-dir"])
-        .output()?;
-
-    if !output.status.success() {
-        anyhow::bail!("Could not determine git common dir.");
-    }
-
-    let path = String::from_utf8(output.stdout)?.trim().to_string();
-    // --git-common-dir may return a relative path; canonicalize to make it absolute
-    Ok(std::fs::canonicalize(path)?)
-}

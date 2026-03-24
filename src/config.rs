@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::keybind::RawKeyBindings;
 
 fn config_path() -> anyhow::Result<PathBuf> {
-    let strategy = etcetera::choose_base_strategy()
+    let strategy = etcetera::base_strategy::Xdg::new()
         .map_err(|e| anyhow::anyhow!("Failed to determine config directory: {e}"))?;
     Ok(strategy.config_dir().join("copse").join("config.toml"))
 }

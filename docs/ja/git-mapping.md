@@ -32,13 +32,23 @@ git branch -D copse/<name>
 
 **マージ (fast-forward)**
 ```sh
+# upstream が worktree にチェックアウトされている場合:
 git -C <upstream-worktree> merge --ff-only <task-commit>
+# upstream がどの worktree にもチェックアウトされていない場合:
+git branch -f <upstream> <task-commit>
 ```
 
-**マージ (squash)** (upstream の worktree 内で実行)
+**マージ (squash)**
 ```sh
+# upstream が worktree にチェックアウトされている場合、その worktree 内で実行:
 git merge --squash copse/<name>
 git commit
+git -C <task-worktree> reset --hard <upstream>
+# upstream が未チェックアウトの場合、タスク worktree で一時的に switch:
+git -C <task-worktree> switch <upstream>
+git -C <task-worktree> merge --squash copse/<name>
+git -C <task-worktree> commit
+git -C <task-worktree> switch copse/<name>
 git -C <task-worktree> reset --hard <upstream>
 ```
 

@@ -88,6 +88,7 @@ fn render_main_full(frame: &mut Frame, area: Rect, app: &App) -> usize {
                 Mode::ConfirmDelete => render_confirm_delete_dialog(frame, area, app),
                 Mode::ConfirmSync => render_confirm_sync_dialog(frame, area, app),
                 Mode::ConfirmMerge => render_confirm_merge_dialog(frame, area, app),
+                Mode::ChangeUpstream { branches, selected } => render_change_upstream_dialog(frame, area, app, branches, *selected),
                 _ => {}
             }
             0
@@ -404,6 +405,70 @@ fn render_confirm_merge_dialog(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(text, inner);
 }
 
+fn render_change_upstream_dialog(frame: &mut Frame, area: Rect, app: &App, branches: &[String], selected: usize) {
+    use ratatui::widgets::Clear;
+
+    let name = app
+        .selected_task()
+        .map(|t| t.name.as_str())
+        .unwrap_or("?");
+
+    // Height: 2 header lines + branch list (capped at 10)
+    let visible_branches = branches.len().min(10) as u16;
+    let dialog_width = 50u16.min(area.width.saturating_sub(4));
+    let dialog_height = (4 + visible_branches).min(area.height);
+    if dialog_width == 0 || dialog_height == 0 {
+        return;
+    }
+    let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    frame.render_widget(Clear, dialog_area);
+
+    let block = Block::default()
+        .title(" Change Upstream ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("Task: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(name),
+        ]),
+        Line::from("Select upstream branch:"),
+    ];
+
+    // Scroll window: keep selected item visible
+    let max_visible = visible_branches as usize;
+    let scroll_offset = if selected >= max_visible {
+        selected - max_visible + 1
+    } else {
+        0
+    };
+
+    for (i, branch) in branches.iter().enumerate().skip(scroll_offset).take(max_visible) {
+        if i == selected {
+            lines.push(Line::from(Span::styled(
+                format!("> {branch}"),
+                Style::default()
+                    .fg(Color::Indexed(166))
+                    .add_modifier(Modifier::BOLD),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!("  {branch}"),
+                Style::default().fg(Color::Indexed(252)),
+            )));
+        }
+    }
+
+    let text = Paragraph::new(lines);
+    frame.render_widget(text, inner);
+}
+
 /// Single status bar for full-screen modes (Tasks, Agent full, dialogs).
 fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App, scroll_offset: usize) {
     let width = area.width as usize;
@@ -462,11 +527,13 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         Mode::ConfirmDelete => &[("y", "delete"), ("n/Esc", "cancel")],
         Mode::ConfirmSync => &[("y", "sync"), ("n/Esc", "cancel")],
         Mode::ConfirmMerge => &[("f", "ff"), ("s", "squash"), ("Esc", "cancel")],
+        Mode::ChangeUpstream { .. } => &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
         _ => &[
             ("n", "new"),
             ("Ctrl-k", "kill"),
             ("S-M", "merge"),
             ("S-S", "sync"),
+            ("S-U", "upstream"),
             ("!", "delete"),
             ("Enter", "open"),
             ("q", "quit"),

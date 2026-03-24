@@ -195,8 +195,11 @@ impl App {
     pub fn handle_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
         match event {
             AppEvent::Key(key) => self.handle_key(key)?,
-            AppEvent::TaskOutput(_id) => {
-                // Parser already updated; the event loop will redraw.
+            AppEvent::TaskOutput(id) => {
+                // Parser already updated; mark dirty for deferred status refresh.
+                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+                    task.waiting_status_dirty = true;
+                }
             }
             AppEvent::TaskCreated(task) => {
                 // New task added as Stopped — worktree created on first launch
@@ -226,6 +229,8 @@ impl App {
                 // Mark as Stopped but keep the task in the list
                 if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
                     task.status = crate::task::TaskStatus::Stopped;
+                    task.waiting_for_input = false;
+                    task.waiting_status_dirty = false;
                     task.commits_ahead = Task::compute_commits_ahead(
                         &self.repo_root, &task.name, &task.upstream,
                     );
@@ -298,6 +303,17 @@ impl App {
             View::Agent => self.handle_agent_key(key)?,
         }
         Ok(())
+    }
+
+    /// Refresh cached waiting status for tasks marked dirty.
+    /// Called once before each draw to avoid redundant PTY scans.
+    pub fn flush_waiting_status(&mut self) {
+        for task in &mut self.tasks {
+            if task.waiting_status_dirty {
+                task.update_waiting_status();
+                task.waiting_status_dirty = false;
+            }
+        }
     }
 
     /// Refresh commits_ahead for all tasks.

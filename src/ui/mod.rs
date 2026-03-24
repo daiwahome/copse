@@ -637,7 +637,13 @@ fn render_error_bar(frame: &mut Frame, area: Rect, app: &App) -> bool {
 fn format_task_info(app: &App) -> String {
     if let Some(task) = app.selected_task() {
         let st = match task.status {
-            crate::task::TaskStatus::Running => "running",
+            crate::task::TaskStatus::Running => {
+                if task.waiting_for_input {
+                    "waiting"
+                } else {
+                    "running"
+                }
+            }
             crate::task::TaskStatus::Stopped => "stopped",
         };
         format!(" {} - {}", task.name, st)

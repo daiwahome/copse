@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod diff;
 mod event;
+mod keybind;
 mod task;
 mod theme;
 mod tui;

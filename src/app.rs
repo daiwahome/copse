@@ -4,6 +4,7 @@ use crate::{
     config::Config,
     diff::DiffState,
     event::{AppEvent, TaskId},
+    keybind::{AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
     task::Task,
     theme::Theme,
 };
@@ -87,6 +88,8 @@ pub struct App {
     pub dialog: Option<Dialog>,
     /// Color theme (built from config)
     pub theme: Theme,
+    /// Resolved key bindings (defaults + user overrides)
+    pub key_bindings: KeyBindings,
 }
 
 impl App {
@@ -97,10 +100,13 @@ impl App {
         event_tx: tokio::sync::mpsc::Sender<AppEvent>,
     ) -> Self {
         let (theme, theme_warnings) = Theme::from_color_config(&config.color);
-        let last_error = if theme_warnings.is_empty() {
+        let (key_bindings, kb_warnings) = KeyBindings::with_overrides(&config.keys);
+        let mut all_warnings = theme_warnings;
+        all_warnings.extend(kb_warnings);
+        let last_error = if all_warnings.is_empty() {
             None
         } else {
-            Some(theme_warnings.join("; "))
+            Some(all_warnings.join("; "))
         };
         Self {
             tasks: Vec::new(),
@@ -116,6 +122,7 @@ impl App {
             focus: Pane::Left,
             dialog: None,
             theme,
+            key_bindings,
         }
     }
 
@@ -296,13 +303,17 @@ impl App {
         if self.dialog.is_some() {
             return self.handle_dialog_key(key);
         }
-        // Ctrl+W: toggle focus (split only)
-        if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            if matches!(self.layout(), ViewLayout::Split(_, _)) {
-                self.focus = match self.focus {
-                    Pane::Left => Pane::Right,
-                    Pane::Right => Pane::Left,
-                };
+        // Global bindings
+        if let Some(action) = self.key_bindings.global.lookup(&key) {
+            match action {
+                GlobalAction::FocusToggle => {
+                    if matches!(self.layout(), ViewLayout::Split(_, _)) {
+                        self.focus = match self.focus {
+                            Pane::Left => Pane::Right,
+                            Pane::Right => Pane::Left,
+                        };
+                    }
+                }
             }
             return Ok(());
         }
@@ -563,65 +574,23 @@ impl App {
     }
 
     fn handle_tasks_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
+        let Some(action) = self.key_bindings.tasks.lookup(&key) else {
+            return Ok(());
+        };
         let in_split = !matches!(self.layout(), ViewLayout::Single(_));
 
-        // Ctrl+K must be checked before the bare 'k' pattern below
-        if key.code == KeyCode::Char('k') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            if let Some(task) = self.tasks.get(self.selected_index) {
-                if task.is_running() {
-                    self.dialog = Some(Dialog::ConfirmKill);
-                }
-            }
-            return Ok(());
-        }
-
-        // Ctrl+O: toggle fullscreen(Tasks)
-        if key.code == KeyCode::Char('o') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            if in_split {
-                self.toggle_fullscreen(View::Tasks);
-            }
-            return Ok(());
-        }
-
-        // Ctrl+Q: close child views
-        if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            if in_split {
-                self.view_stack.clear();
-                self.fullscreen = None;
-            }
-            return Ok(());
-        }
-
-        match key.code {
-            // q/Q: in split context, close child views; in single, quit
-            KeyCode::Char('q') | KeyCode::Char('Q') => {
-                if in_split {
-                    self.view_stack.clear();
-                    self.fullscreen = None;
-                } else {
-                    let has_running = self
-                        .tasks
-                        .iter()
-                        .any(|t| t.status == crate::task::TaskStatus::Running);
-                    if has_running {
-                        self.dialog = Some(Dialog::ConfirmQuit);
-                    } else {
-                        self.should_quit = true;
-                    }
-                }
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
+        match action {
+            TasksAction::MoveDown => {
                 if !self.tasks.is_empty() {
                     self.selected_index = (self.selected_index + 1).min(self.tasks.len() - 1);
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            TasksAction::MoveUp => {
                 if !self.tasks.is_empty() {
                     self.selected_index = self.selected_index.saturating_sub(1);
                 }
             }
-            // Enter: open agent view or resume task
-            KeyCode::Enter => {
+            TasksAction::OpenTask => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     match task.status {
                         crate::task::TaskStatus::Running => {
@@ -636,54 +605,12 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('n') => {
+            TasksAction::NewTask => {
                 self.dialog = Some(Dialog::NewTask {
                     input: String::new(),
                 });
             }
-            // Shift+M: merge into upstream (Stopped only)
-            KeyCode::Char('M') => {
-                if let Some(task) = self.tasks.get(self.selected_index) {
-                    if task.is_stopped() {
-                        self.dialog = Some(Dialog::ConfirmMerge);
-                    } else {
-                        self.last_error = Some("Stop the task before merging".to_string());
-                    }
-                }
-            }
-            // Shift+S: sync from upstream (Stopped only)
-            KeyCode::Char('S') => {
-                if let Some(task) = self.tasks.get(self.selected_index) {
-                    if task.is_stopped() {
-                        self.dialog = Some(Dialog::ConfirmSync);
-                    } else {
-                        self.last_error = Some("Stop the task before syncing".to_string());
-                    }
-                }
-            }
-            // Shift+U: change upstream (Stopped only)
-            KeyCode::Char('U') => {
-                if let Some(task) = self.tasks.get(self.selected_index) {
-                    if !task.is_stopped() {
-                        self.last_error = Some("Stop the task before changing upstream".to_string());
-                    } else if !task.has_run {
-                        self.last_error = Some("Launch the task at least once before changing upstream".to_string());
-                    } else {
-                        let branches = Task::list_upstream_candidates(&self.repo_root);
-                        if branches.is_empty() {
-                            self.last_error = Some("No eligible upstream branches found".to_string());
-                        } else {
-                            let current_upstream = &task.upstream;
-                            let selected = branches.iter()
-                                .position(|b| b == current_upstream)
-                                .unwrap_or(0);
-                            self.dialog = Some(Dialog::ChangeUpstream { branches, selected });
-                        }
-                    }
-                }
-            }
-            // d: open diff view (when commits_ahead > 0)
-            KeyCode::Char('d') => {
+            TasksAction::ShowDiff => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let ahead = task.commits_ahead.unwrap_or(0);
                     if ahead == 0 {
@@ -706,8 +633,45 @@ impl App {
                     }
                 }
             }
-            // !: delete task (Stopped only, tig-style)
-            KeyCode::Char('!') => {
+            TasksAction::Merge => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if task.is_stopped() {
+                        self.dialog = Some(Dialog::ConfirmMerge);
+                    } else {
+                        self.last_error = Some("Stop the task before merging".to_string());
+                    }
+                }
+            }
+            TasksAction::Sync => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if task.is_stopped() {
+                        self.dialog = Some(Dialog::ConfirmSync);
+                    } else {
+                        self.last_error = Some("Stop the task before syncing".to_string());
+                    }
+                }
+            }
+            TasksAction::ChangeUpstream => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if !task.is_stopped() {
+                        self.last_error = Some("Stop the task before changing upstream".to_string());
+                    } else if !task.has_run {
+                        self.last_error = Some("Launch the task at least once before changing upstream".to_string());
+                    } else {
+                        let branches = Task::list_upstream_candidates(&self.repo_root);
+                        if branches.is_empty() {
+                            self.last_error = Some("No eligible upstream branches found".to_string());
+                        } else {
+                            let current_upstream = &task.upstream;
+                            let selected = branches.iter()
+                                .position(|b| b == current_upstream)
+                                .unwrap_or(0);
+                            self.dialog = Some(Dialog::ChangeUpstream { branches, selected });
+                        }
+                    }
+                }
+            }
+            TasksAction::Delete => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     if task.is_stopped() {
                         self.dialog = Some(Dialog::ConfirmDelete);
@@ -716,41 +680,60 @@ impl App {
                     }
                 }
             }
-            // R: refresh commits ahead
-            KeyCode::Char('R') => {
+            TasksAction::Refresh => {
                 self.refresh_commits_ahead();
                 if self.has_view(View::Diff) {
                     self.update_diff_for_selected_task();
                 }
             }
-            // O: toggle fullscreen(Tasks) — only meaningful if child views exist
-            KeyCode::Char('O') => {
+            TasksAction::Fullscreen => {
                 if in_split {
                     self.toggle_fullscreen(View::Tasks);
                 }
             }
-            _ => {}
+            TasksAction::Quit => {
+                if in_split {
+                    self.view_stack.clear();
+                    self.fullscreen = None;
+                } else {
+                    let has_running = self
+                        .tasks
+                        .iter()
+                        .any(|t| t.status == crate::task::TaskStatus::Running);
+                    if has_running {
+                        self.dialog = Some(Dialog::ConfirmQuit);
+                    } else {
+                        self.should_quit = true;
+                    }
+                }
+            }
+            TasksAction::Kill => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if task.is_running() {
+                        self.dialog = Some(Dialog::ConfirmKill);
+                    }
+                }
+            }
+            TasksAction::CloseChildren => {
+                if in_split {
+                    self.view_stack.clear();
+                    self.fullscreen = None;
+                }
+            }
         }
         Ok(())
     }
 
     fn handle_agent_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
-        // Ctrl+O: toggle agent fullscreen
-        if key.code == KeyCode::Char('o') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            self.toggle_fullscreen(View::Agent);
-            return Ok(());
-        }
-
-        // Ctrl+Q: close agent view
-        if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            self.close_agent();
-            return Ok(());
-        }
-
-        // Ctrl+B: scroll up one page, Ctrl+F: scroll down one page
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('b') => {
+        if let Some(action) = self.key_bindings.agent.lookup(&key) {
+            match action {
+                AgentAction::Fullscreen => {
+                    self.toggle_fullscreen(View::Agent);
+                }
+                AgentAction::Close => {
+                    self.close_agent();
+                }
+                AgentAction::PageUp => {
                     if let Some(task) = self.focused_task_mut() {
                         let page = crossterm::terminal::size()
                             .map(|(_, r)| r.saturating_sub(2) as usize)
@@ -762,19 +745,17 @@ impl App {
                         screen.set_scrollback(new_offset);
                         task.scroll_offset = screen.scrollback();
                     }
-                    return Ok(());
                 }
-                KeyCode::Char('f') => {
+                AgentAction::PageDown => {
                     if let Some(task) = self.focused_task_mut() {
                         let page = crossterm::terminal::size()
                             .map(|(_, r)| r.saturating_sub(2) as usize)
                             .unwrap_or(20);
                         task.scroll_offset = task.scroll_offset.saturating_sub(page);
                     }
-                    return Ok(());
                 }
-                _ => {}
             }
+            return Ok(());
         }
 
         // Everything else: reset scroll and forward to PTY
@@ -791,90 +772,70 @@ impl App {
     }
 
     fn handle_diff_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
+        let Some(action) = self.key_bindings.diff.lookup(&key) else {
+            return Ok(());
+        };
         let page_height = crossterm::terminal::size()
             .map(|(_, r)| r.saturating_sub(2) as usize)
             .unwrap_or(20);
 
-        // Ctrl key shortcuts
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('b') => {
-                    if let Some(state) = self.diff_state_mut() {
-                        state.page_up(page_height);
-                        state.ensure_cursor_visible(page_height);
-                    }
-                    return Ok(());
-                }
-                KeyCode::Char('f') => {
-                    if let Some(state) = self.diff_state_mut() {
-                        state.page_down(page_height);
-                        state.ensure_cursor_visible(page_height);
-                    }
-                    return Ok(());
-                }
-                KeyCode::Char('o') => {
-                    self.toggle_fullscreen(View::Diff);
-                    return Ok(());
-                }
-                KeyCode::Char('q') => {
-                    self.close_diff();
-                    return Ok(());
-                }
-                _ => {}
-            }
-        }
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => {
-                self.close_diff();
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
+        match action {
+            DiffAction::MoveDown => {
                 if let Some(state) = self.diff_state_mut() {
                     state.move_cursor_down();
                     state.ensure_cursor_visible(page_height);
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            DiffAction::MoveUp => {
                 if let Some(state) = self.diff_state_mut() {
                     state.move_cursor_up();
                     state.ensure_cursor_visible(page_height);
                 }
             }
-            // @: jump to next hunk (sets search pattern to ^@@, like tig)
-            KeyCode::Char('@') => {
+            DiffAction::NextHunk => {
                 if let Some(state) = self.diff_state_mut() {
                     state.search_forward("^@@");
                     state.ensure_cursor_visible(page_height);
                 }
             }
-            // /: enter search mode
-            KeyCode::Char('/') => {
+            DiffAction::Search => {
                 self.dialog = Some(Dialog::DiffSearch {
                     input: String::new(),
                 });
             }
-            // n: next search match
-            KeyCode::Char('n') => {
+            DiffAction::SearchNext => {
                 if let Some(state) = self.diff_state_mut() {
                     state.search_next();
                     state.ensure_cursor_visible(page_height);
                 }
             }
-            // N: previous search match
-            KeyCode::Char('N') => {
+            DiffAction::SearchPrev => {
                 if let Some(state) = self.diff_state_mut() {
                     state.search_prev();
                     state.ensure_cursor_visible(page_height);
                 }
             }
-            KeyCode::Char('O') => {
-                self.toggle_fullscreen(View::Diff);
-            }
-            // R: refresh diff for current task
-            KeyCode::Char('R') => {
+            DiffAction::Refresh => {
                 self.update_diff_for_selected_task();
             }
-            _ => {}
+            DiffAction::Fullscreen => {
+                self.toggle_fullscreen(View::Diff);
+            }
+            DiffAction::Close => {
+                self.close_diff();
+            }
+            DiffAction::PageUp => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.page_up(page_height);
+                    state.ensure_cursor_visible(page_height);
+                }
+            }
+            DiffAction::PageDown => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.page_down(page_height);
+                    state.ensure_cursor_visible(page_height);
+                }
+            }
         }
         Ok(())
     }

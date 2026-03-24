@@ -314,10 +314,41 @@ impl App {
         // meant for the PTY (e.g. vim's O command). Need a key that doesn't conflict
         // with claude code's key bindings. See docs/en/design-decisions.md.
 
-        // Everything else: forward to PTY
+        // Ctrl+B: scroll up one page, Ctrl+F: scroll down one page
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('b') => {
+                    if let Some(task) = self.focused_task_mut() {
+                        let page = crossterm::terminal::size()
+                            .map(|(_, r)| r.saturating_sub(2) as usize)
+                            .unwrap_or(20);
+                        let new_offset = task.scroll_offset.saturating_add(page);
+                        let mut screen = task.parser.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .screen().clone();
+                        screen.set_scrollback(new_offset);
+                        task.scroll_offset = screen.scrollback();
+                    }
+                    return Ok(());
+                }
+                KeyCode::Char('f') => {
+                    if let Some(task) = self.focused_task_mut() {
+                        let page = crossterm::terminal::size()
+                            .map(|(_, r)| r.saturating_sub(2) as usize)
+                            .unwrap_or(20);
+                        task.scroll_offset = task.scroll_offset.saturating_sub(page);
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+
+        // Everything else: reset scroll and forward to PTY
         let bytes = key_to_bytes(key);
         if !bytes.is_empty() {
             if let Some(task) = self.focused_task_mut() {
+                task.scroll_offset = 0;
                 if task.status == crate::task::TaskStatus::Running {
                     let _ = task.write_input(&bytes);
                 }

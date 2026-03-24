@@ -23,8 +23,8 @@ pub fn render(frame: &mut Frame, app: &App) {
                 .constraints([Constraint::Fill(1), Constraint::Length(1)])
                 .split(frame.area());
 
-            render_main_full(frame, chunks[0], app);
-            render_single_status_bar(frame, chunks[1], app);
+            let scroll_offset = render_main_full(frame, chunks[0], app);
+            render_single_status_bar(frame, chunks[1], app, scroll_offset);
         }
     }
 }
@@ -67,15 +67,16 @@ fn render_split(frame: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(right_area);
-    agent::render(frame, right_rows[0], app);
-    render_agent_status_bar(frame, right_rows[1], app, false);
+    let scroll_offset = agent::render(frame, right_rows[0], app);
+    render_agent_status_bar(frame, right_rows[1], app, false, scroll_offset);
 }
 
 /// Full-screen main content area (Tasks, NewTask, ConfirmQuit, Agent full).
-fn render_main_full(frame: &mut Frame, area: Rect, app: &App) {
+/// Returns the actual (clamped) scroll offset when in Agent mode, 0 otherwise.
+fn render_main_full(frame: &mut Frame, area: Rect, app: &App) -> usize {
     match &app.mode {
         Mode::Agent { full: true, .. } => {
-            agent::render(frame, area, app);
+            agent::render(frame, area, app)
         }
         _ => {
             list::render(frame, area, app);
@@ -89,6 +90,7 @@ fn render_main_full(frame: &mut Frame, area: Rect, app: &App) {
                 Mode::ConfirmMerge => render_confirm_merge_dialog(frame, area, app),
                 _ => {}
             }
+            0
         }
     }
 }
@@ -403,7 +405,7 @@ fn render_confirm_merge_dialog(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Single status bar for full-screen modes (Tasks, Agent full, dialogs).
-fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App) {
+fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App, scroll_offset: usize) {
     let width = area.width as usize;
 
     if let Some(err) = &app.last_error {
@@ -419,7 +421,7 @@ fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     match &app.mode {
         Mode::Agent { .. } => {
-            render_agent_status_bar(frame, area, app, true);
+            render_agent_status_bar(frame, area, app, true, scroll_offset);
         }
         _ => {
             // Tasks, ConfirmQuit, ConfirmKill, NewTask all show the tasks bar
@@ -475,23 +477,27 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Status bar for the agent (right) pane.
-fn render_agent_status_bar(frame: &mut Frame, area: Rect, app: &App, full: bool) {
+fn render_agent_status_bar(frame: &mut Frame, area: Rect, app: &App, full: bool, scroll_offset: usize) {
     let name = app
         .focused_task()
         .or_else(|| app.selected_task())
         .map(|t| t.name.as_str())
         .unwrap_or("");
 
-    let location = if full {
+    let mut location = if full {
         format!(" {name} - fullscreen")
     } else {
         format!(" {name}")
     };
 
+    if scroll_offset > 0 {
+        location.push_str(&format!(" [SCROLL +{}]", scroll_offset));
+    }
+
     let hints: &[(&str, &str)] = if full {
-        &[("Ctrl-]", "split")]
+        &[("Ctrl-b/f", "scroll"), ("Ctrl-]", "split")]
     } else {
-        &[("Ctrl-]", "back")]
+        &[("Ctrl-b/f", "scroll"), ("Ctrl-]", "back")]
     };
 
     render_agent_status_bar_line(frame, area, &location, hints);

@@ -69,11 +69,13 @@ claude プロセスの出力を表示する。`Ctrl-]` 以外の全てのキー�
 
 ### キーバインド
 
-| キー        | アクション                                           |
-|-------------|------------------------------------------------------|
-| (TBD)       | Fullscreen に拡大 (対応予定)                          |
-| `Ctrl-]`    | Fullscreen → split view、Split → Tasks view に戻る   |
-| その他      | Claude Code に転送                                   |
+| キー      | アクション                                         | Overrides    |
+|-----------|----------------------------------------------------|--------------|
+| (TBD)     | Fullscreen に拡大 (対応予定)                        |              |
+| `Ctrl-b`  | 1 ページ上にスクロール (スクロールバック)            | cursor left  |
+| `Ctrl-f`  | 1 ページ下にスクロール (スクロールバック)            | cursor right |
+| `Ctrl-]`  | Fullscreen → split view、Split → Tasks view に戻る |              |
+| その他    | スクロール位置をリセットして Claude Code に転送      |              |
 
 ### ステータスバー
 

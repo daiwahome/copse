@@ -69,11 +69,13 @@ Shows the claude process output. All keystrokes are forwarded to claude except `
 
 ### Key Bindings
 
-| Key         | Action                                             |
-|-------------|----------------------------------------------------|
-| (TBD)       | Maximize to fullscreen (planned)                   |
-| `Ctrl-]`    | Fullscreen → split view, Split → back to Tasks     |
-| Any other   | Forward to Claude Code                             |
+| Key       | Action                                           | Overrides    |
+|-----------|--------------------------------------------------|--------------|
+| (TBD)     | Maximize to fullscreen (planned)                 |              |
+| `Ctrl-b`  | Scroll up one page (scrollback)                  | cursor left  |
+| `Ctrl-f`  | Scroll down one page (scrollback)                | cursor right |
+| `Ctrl-]`  | Fullscreen → split view, Split → back to Tasks   |              |
+| Any other | Reset scroll position and forward to Claude Code |              |
 
 ### Status Bar
 

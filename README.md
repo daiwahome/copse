@@ -97,10 +97,11 @@ copse/src
 ## Development
 
 ```sh
-cargo fmt --check             # Check formatting
+cargo fmt --check             # Check Rust formatting
 cargo clippy -- -D warnings   # Lint
 cargo test                    # Run tests
 cargo build --release         # Release build
+dprint check                  # Check Markdown formatting
 ```
 
 These checks run automatically via GitHub Actions on every pull request and push to `main`.

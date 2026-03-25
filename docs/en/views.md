@@ -9,37 +9,37 @@ The default view. Shows all tasks with their status, upstream branch, and commit
 ### Display
 
 ```
- ▶ task-a  (upstream: feature-x)  running   3 ahead
- ⏸ task-b  (upstream: develop)    waiting   synced
- ■ task-c  (upstream: feature-y)  stopped   1 ahead
+▶ task-a  (upstream: feature-x)  running   3 ahead
+⏸ task-b  (upstream: develop)    waiting   synced
+■ task-c  (upstream: feature-y)  stopped   1 ahead
 ```
 
 Each task shows:
 
-| Element                 | Description                                            |
-|-------------------------|--------------------------------------------------------|
+| Element                | Description                                            |
+| ---------------------- | ------------------------------------------------------ |
 | Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped          |
-| Name                    | Task name (also used as branch suffix: `copse/<name>`) |
-| Upstream                | The branch the task was forked from                    |
-| Status text             | `running` / `waiting` / `stopped`                      |
-| Commits ahead           | Number of commits ahead of upstream, or `synced`       |
+| Name                   | Task name (also used as branch suffix: `copse/<name>`) |
+| Upstream               | The branch the task was forked from                    |
+| Status text            | `running` / `waiting` / `stopped`                      |
+| Commits ahead          | Number of commits ahead of upstream, or `synced`       |
 
 ### Key Bindings
 
-| Key          | Action                                          |
-|--------------|-------------------------------------------------|
-| `j` / `↓`   | Select next task                                |
-| `k` / `↑`   | Select previous task                            |
-| `Enter` / `d` | Open diff view (when commits ahead > 0)       |
-| `a`          | Open agent view (running) / Start (stopped)     |
-| `Ctrl-a`     | Start without `--continue` (stopped only)       |
-| `n`          | New task (name → upstream selection)             |
-| `Ctrl-k`     | Kill selected task (running only)               |
-| `M`          | Merge into upstream (ff / squash, stopped only) |
-| `S`          | Sync from upstream (reset, stopped only)        |
-| `!`          | Delete task (worktree + branch, stopped only)   |
-| `R`          | Refresh commits ahead                           |
-| `q` / `Q`   | Quit copse                                      |
+| Key           | Action                                          |
+| ------------- | ----------------------------------------------- |
+| `j` / `↓`     | Select next task                                |
+| `k` / `↑`     | Select previous task                            |
+| `Enter` / `d` | Open diff view (when commits ahead > 0)         |
+| `a`           | Open agent view (running) / Start (stopped)     |
+| `Ctrl-a`      | Start without `--continue` (stopped only)       |
+| `n`           | New task (name → upstream selection)            |
+| `Ctrl-k`      | Kill selected task (running only)               |
+| `M`           | Merge into upstream (ff / squash, stopped only) |
+| `S`           | Sync from upstream (reset, stopped only)        |
+| `!`           | Delete task (worktree + branch, stopped only)   |
+| `R`           | Refresh commits ahead                           |
+| `q` / `Q`     | Quit copse                                      |
 
 ### Task Creation Flow
 
@@ -73,32 +73,32 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 
 ### Key Bindings (Diff pane)
 
-| Key        | Action                                            |
-|------------|---------------------------------------------------|
-| `j` / `↓`  | Move cursor down                                 |
-| `k` / `↑`  | Move cursor up                                   |
-| `Ctrl-b`   | Scroll up one page                               |
-| `Ctrl-f`   | Scroll down one page                             |
-| `/`        | Search (enter pattern, `Enter` to search)         |
-| `n`        | Next search match                                 |
-| `N`        | Previous search match                             |
-| `@`        | Jump to next hunk (sets pattern to `^@@`)          |
-| `R`        | Refresh diff                                       |
-| `O`        | Toggle split ↔ fullscreen                         |
-| `q`        | Close diff view                                   |
+| Key       | Action                                    |
+| --------- | ----------------------------------------- |
+| `j` / `↓` | Move cursor down                          |
+| `k` / `↑` | Move cursor up                            |
+| `Ctrl-b`  | Scroll up one page                        |
+| `Ctrl-f`  | Scroll down one page                      |
+| `/`       | Search (enter pattern, `Enter` to search) |
+| `n`       | Next search match                         |
+| `N`       | Previous search match                     |
+| `@`       | Jump to next hunk (sets pattern to `^@@`) |
+| `R`       | Refresh diff                              |
+| `O`       | Toggle split ↔ fullscreen                 |
+| `q`       | Close diff view                           |
 
 When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`).
 
 ### Key Bindings (Tasks pane, left focus)
 
-| Key        | Action                                            |
-|------------|---------------------------------------------------|
-| `j` / `k`  | Select task                                       |
-| `Enter`    | Open diff view                                    |
-| `a`        | Open agent (running) / Start (stopped)            |
-| `O`        | Tasks fullscreen                                  |
-| `Ctrl-w`   | Switch focus to diff pane                         |
-| `q`        | Close diff, return to tasks fullscreen            |
+| Key       | Action                                 |
+| --------- | -------------------------------------- |
+| `j` / `k` | Select task                            |
+| `Enter`   | Open diff view                         |
+| `a`       | Open agent (running) / Start (stopped) |
+| `O`       | Tasks fullscreen                       |
+| `Ctrl-w`  | Switch focus to diff pane              |
+| `q`       | Close diff, return to tasks fullscreen |
 
 ## Agent View
 
@@ -124,25 +124,25 @@ When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left,
 
 ### Key Bindings (Agent pane, right focus)
 
-| Key        | Action                                            | Overrides    |
-|------------|---------------------------------------------------|--------------|
-| `Ctrl-o`   | Toggle split ↔ fullscreen                         |              |
-| `Ctrl-q`   | Close agent view, return to tasks or diff          |              |
-| `Ctrl-w`   | Switch focus to left pane                          |              |
-| `Ctrl-b`   | Scroll up one page (scrollback)                    | cursor left  |
-| `Ctrl-f`   | Scroll down one page (scrollback)                  | cursor right |
-| Any other  | Reset scroll position and forward to Claude Code   |              |
+| Key       | Action                                           | Overrides    |
+| --------- | ------------------------------------------------ | ------------ |
+| `Ctrl-o`  | Toggle split ↔ fullscreen                        |              |
+| `Ctrl-q`  | Close agent view, return to tasks or diff        |              |
+| `Ctrl-w`  | Switch focus to left pane                        |              |
+| `Ctrl-b`  | Scroll up one page (scrollback)                  | cursor left  |
+| `Ctrl-f`  | Scroll down one page (scrollback)                | cursor right |
+| Any other | Reset scroll position and forward to Claude Code |              |
 
 ### Key Bindings (Tasks pane, left focus)
 
-| Key        | Action                                            |
-|------------|---------------------------------------------------|
-| `j` / `k`  | Select task                                       |
-| `d`        | Open diff view in left pane                        |
-| `a`        | Focus agent pane (running) / Start (stopped)       |
-| `O`        | Tasks fullscreen                                   |
-| `Ctrl-w`   | Switch focus to agent pane                         |
-| `q`        | Close agent, return to tasks fullscreen            |
+| Key       | Action                                       |
+| --------- | -------------------------------------------- |
+| `j` / `k` | Select task                                  |
+| `d`       | Open diff view in left pane                  |
+| `a`       | Focus agent pane (running) / Start (stopped) |
+| `O`       | Tasks fullscreen                             |
+| `Ctrl-w`  | Switch focus to agent pane                   |
+| `q`       | Close agent, return to tasks fullscreen      |
 
 ## Focus Switching
 

@@ -20,14 +20,14 @@ Claude Code には `--worktree` フラグが組み込まれており、worktree 
 
 `claude --worktree` は単一の Claude セッションを分離するための機能。copse は複数のタスクを管理し、upstream ブランチの追跡やライフサイクル管理を行うタスクマネージャー。
 
-| 機能                     | `claude --worktree`                | copse                                      |
-|--------------------------|------------------------------------|--------------------------------------------|
-| Worktree パス            | `.claude/worktrees/<n>/`           | `<git-common-dir>/copse-worktrees/<name>`  |
-| ブランチ命名             | `worktree-<n>` (自動採番)           | `copse/<name>` (ユーザー指定)              |
-| Upstream 追跡            | なし                               | あり (git tracking branch)                 |
-| マージ / 同期操作        | なし                               | あり (ff, squash, reset)                   |
-| タスクライフサイクル     | 単一セッション                     | 作成 / 停止 / 再開 / 削除                   |
-| git での直接確認         | 限定的                             | 完全 (`git branch -vv` 等)                  |
+| 機能                 | `claude --worktree`       | copse                                     |
+| -------------------- | ------------------------- | ----------------------------------------- |
+| Worktree パス        | `.claude/worktrees/<n>/`  | `<git-common-dir>/copse-worktrees/<name>` |
+| ブランチ命名         | `worktree-<n>` (自動採番) | `copse/<name>` (ユーザー指定)             |
+| Upstream 追跡        | なし                      | あり (git tracking branch)                |
+| マージ / 同期操作    | なし                      | あり (ff, squash, reset)                  |
+| タスクライフサイクル | 単一セッション            | 作成 / 停止 / 再開 / 削除                 |
+| git での直接確認     | 限定的                    | 完全 (`git branch -vv` 等)                |
 
 ### git ネイティブ設計
 

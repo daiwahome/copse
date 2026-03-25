@@ -1,6 +1,6 @@
 # Git Mapping
 
-copse is designed to be git-native. Every concept and operation maps directly to standard git commands. You can always bypass copse and work with git directly — copse will pick up the changes on next launch or refresh (`Ctrl-r`).
+copse is designed to be git-native. Every concept and operation maps directly to standard git commands. You can always bypass copse and work with git directly — copse will pick up the changes on next launch or refresh (`R`).
 
 ## Concepts → Git Primitives
 

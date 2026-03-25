@@ -25,6 +25,17 @@ TODO
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - A git repository (copse must be run from within one)
 
+### Recommended Terminals
+
+copse uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for accurate key handling. The following terminals are recommended:
+
+- [Ghostty](https://ghostty.org/)
+- [Kitty](https://sw.kovidgoyal.net/kitty/)
+- [iTerm2](https://iterm2.com/)
+- [WezTerm](https://wezfurlong.org/wezterm/)
+
+See also: [Claude Code terminal setup](https://code.claude.com/docs/en/terminal-config)
+
 ## Installation
 
 ### Homebrew (macOS)

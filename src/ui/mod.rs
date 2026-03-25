@@ -127,9 +127,10 @@ fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
     let hints: &[(&str, &str)] = if focus == Pane::Left {
         &[
             ("j/k", "select"),
-            ("d", "diff"),
-            ("Enter", "focus"),
-            ("C-w", "agent"),
+            ("Enter", "diff"),
+            ("a", "agent"),
+            ("C-a", "fresh"),
+            ("C-w", "focus"),
             ("q", "back"),
         ]
     } else {
@@ -185,7 +186,8 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
     let hints: &[(&str, &str)] = if focus == Pane::Left {
         &[
             ("j/k", "select"),
-            ("Enter", "agent"),
+            ("a", "agent"),
+            ("C-a", "fresh"),
             ("C-w", "diff"),
             ("q", "back"),
         ]
@@ -366,7 +368,9 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             ("U", "upstream"),
             ("!", "delete"),
             ("R", "refresh"),
-            ("Enter", "open"),
+            ("Enter", "diff"),
+            ("a", "agent"),
+            ("C-a", "fresh"),
             ("q", "quit"),
         ],
     };

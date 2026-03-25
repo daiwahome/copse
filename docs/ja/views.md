@@ -26,19 +26,20 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 
 ### キーバインド
 
-| キー        | アクション                                        |
-|-------------|---------------------------------------------------|
-| `j` / `↓`   | 次のタスクを選択                                  |
-| `k` / `↑`   | 前のタスクを選択                                  |
-| `Enter`     | Agent view を開く (実行中) / 再開 (停止中)         |
-| `d`         | Diff view を開く (commits ahead > 0 の場合)        |
-| `n`         | 新しいタスク (名前 → upstream 選択)                |
-| `Ctrl-k`    | タスクを停止 (実行中のみ)                          |
-| `M`         | upstream にマージ (ff / squash, 停止中のみ)        |
-| `S`         | upstream から同期 (reset, 停止中のみ)              |
-| `!`         | タスクを削除 (worktree + branch, 停止中のみ)       |
-| `R`         | commits ahead を更新                               |
-| `q` / `Q`   | copse を終了                                       |
+| キー             | アクション                                       |
+|------------------|--------------------------------------------------|
+| `j` / `↓`       | 次のタスクを選択                                 |
+| `k` / `↑`       | 前のタスクを選択                                 |
+| `Enter` / `d`   | Diff view を開く (commits ahead > 0 の場合)       |
+| `a`             | Agent view を開く (実行中) / 起動 (停止中)        |
+| `Ctrl-a`        | `--continue` なしで起動 (停止中のみ)              |
+| `n`             | 新しいタスク (名前 → upstream 選択)               |
+| `Ctrl-k`        | タスクを停止 (実行中のみ)                         |
+| `M`             | upstream にマージ (ff / squash, 停止中のみ)       |
+| `S`             | upstream から同期 (reset, 停止中のみ)             |
+| `!`             | タスクを削除 (worktree + branch, 停止中のみ)      |
+| `R`             | commits ahead を更新                              |
+| `q` / `Q`      | copse を終了                                      |
 
 ### タスク作成フロー
 
@@ -46,7 +47,7 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 2. タスク名を入力 → `Enter`
 3. upstream ブランチをリストから選択 (`j`/`k` → `Enter`)
 4. タスクが停止状態 (`■`) で表示される
-5. `Enter` を押すと worktree 内で claude が起動する
+5. `a` を押すと worktree 内で claude が起動する
 
 ## Diff View
 
@@ -93,7 +94,8 @@ Agent も開いている場合、レイアウトは `[Diff | Agent]` になる: 
 | キー        | アクション                                        |
 |-------------|---------------------------------------------------|
 | `j` / `k`   | タスク選択                                         |
-| `Enter`     | Agent を開く (実行中) / 再開 (停止中)              |
+| `Enter`     | Diff view を開く                                   |
+| `a`         | Agent を開く (実行中) / 起動 (停止中)              |
 | `O`         | Tasks fullscreen                                   |
 | `Ctrl-w`    | Diff ペインにフォーカス切替                        |
 | `q`         | Diff を閉じて Tasks fullscreen に戻る              |
@@ -137,7 +139,7 @@ Diff も開いている場合、レイアウトは `[Diff | Agent]` になる: �
 |-------------|---------------------------------------------------|
 | `j` / `k`   | タスク選択                                         |
 | `d`         | 左ペインに Diff view を表示                        |
-| `Enter`     | Agent ペインにフォーカス (実行中) / 再開 (停止中)   |
+| `a`         | Agent ペインにフォーカス (実行中) / 起動 (停止中)   |
 | `O`         | Tasks fullscreen                                   |
 | `Ctrl-w`    | Agent ペインにフォーカス切替                        |
 | `q`         | Agent を閉じて Tasks fullscreen に戻る              |

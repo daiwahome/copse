@@ -23,6 +23,7 @@ pub enum TasksAction {
     Quit,
     Kill,
     CloseChildren,
+    StartFresh,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -111,6 +112,14 @@ impl KeyBind {
                 });
             }
             return Err(format!("Invalid Ctrl combo: {s}"));
+        }
+
+        if let Some(rest) = s.strip_prefix("Shift-") {
+            let inner = Self::parse(rest)?;
+            return Ok(Self {
+                code: inner.code,
+                modifiers: inner.modifiers | KeyModifiers::SHIFT,
+            });
         }
 
         // Named keys (case-sensitive)
@@ -219,8 +228,8 @@ fn tasks_action_defs() -> &'static [ActionDef<TasksAction>] {
         "new-task" => TasksAction::NewTask, ["n"];
         "move-down" => TasksAction::MoveDown, ["j", "Down"];
         "move-up" => TasksAction::MoveUp, ["k", "Up"];
-        "open" => TasksAction::OpenTask, ["Enter"];
-        "show-diff" => TasksAction::ShowDiff, ["d"];
+        "open" => TasksAction::OpenTask, ["a"];
+        "show-diff" => TasksAction::ShowDiff, ["d", "Enter"];
         "merge" => TasksAction::Merge, ["M"];
         "sync" => TasksAction::Sync, ["S"];
         "change-upstream" => TasksAction::ChangeUpstream, ["U"];
@@ -230,6 +239,7 @@ fn tasks_action_defs() -> &'static [ActionDef<TasksAction>] {
         "quit" => TasksAction::Quit, ["q", "Q"];
         "kill" => TasksAction::Kill, ["Ctrl-K"];
         "close-children" => TasksAction::CloseChildren, ["Ctrl-Q"];
+        "start-fresh" => TasksAction::StartFresh, ["Ctrl-A"];
     }
 }
 
@@ -465,6 +475,11 @@ mod tests {
         let ctrl_o = KeyBind::parse("Ctrl-O").unwrap();
         assert_eq!(ctrl_o.code, KeyCode::Char('o'));
         assert!(ctrl_o.modifiers.contains(KeyModifiers::CONTROL));
+
+        // Shift combos
+        let shift_enter = KeyBind::parse("Shift-Enter").unwrap();
+        assert_eq!(shift_enter.code, KeyCode::Enter);
+        assert!(shift_enter.modifiers.contains(KeyModifiers::SHIFT));
 
         // Named keys
         assert_eq!(KeyBind::parse("Enter").unwrap().code, KeyCode::Enter);

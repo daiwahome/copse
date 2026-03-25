@@ -25,6 +25,17 @@ TODO
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - git リポジトリ内で実行する必要がある
 
+### 推奨ターミナル
+
+copse はキー入力の正確な処理のために [Kitty キーボードプロトコル](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)を使用している。以下のターミナルを推奨:
+
+- [Ghostty](https://ghostty.org/)
+- [Kitty](https://sw.kovidgoyal.net/kitty/)
+- [iTerm2](https://iterm2.com/)
+- [WezTerm](https://wezfurlong.org/wezterm/)
+
+参考: [Claude Code ターミナル設定](https://code.claude.com/docs/ja/terminal-config)
+
 ## インストール
 
 ### Homebrew (macOS)

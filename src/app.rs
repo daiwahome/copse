@@ -735,7 +735,7 @@ impl App {
                             self.sync_pty_size();
                         }
                         crate::task::TaskStatus::Stopped => {
-                            self.resume_task(self.selected_index);
+                            self.resume_task(self.selected_index, false);
                         }
                     }
                 }
@@ -854,6 +854,13 @@ impl App {
                 if in_split {
                     self.view_stack.clear();
                     self.fullscreen = None;
+                }
+            }
+            TasksAction::StartFresh => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if task.is_stopped() {
+                        self.resume_task(self.selected_index, true);
+                    }
                 }
             }
         }
@@ -1016,7 +1023,7 @@ impl App {
         }
     }
 
-    fn resume_task(&mut self, index: usize) {
+    fn resume_task(&mut self, index: usize, force_fresh: bool) {
         let Some(task) = self.tasks.get(index) else {
             return;
         };
@@ -1024,7 +1031,7 @@ impl App {
             id: task.id,
             name: task.name.clone(),
             upstream: task.upstream.clone(),
-            has_run: task.has_run,
+            has_run: if force_fresh { false } else { task.has_run },
             repo_root: self.repo_root.clone(),
             worktree_base_dir: self.worktree_base_dir.clone(),
             config: self.config.clone(),

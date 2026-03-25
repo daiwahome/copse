@@ -26,19 +26,20 @@ Each task shows:
 
 ### Key Bindings
 
-| Key        | Action                                          |
-|------------|-------------------------------------------------|
-| `j` / `↓`  | Select next task                                |
-| `k` / `↑`  | Select previous task                            |
-| `Enter`    | Open agent view (running) / Resume (stopped)    |
-| `d`        | Open diff view (when commits ahead > 0)         |
-| `n`        | New task (name → upstream selection)             |
-| `Ctrl-k`   | Kill selected task (running only)               |
-| `M`        | Merge into upstream (ff / squash, stopped only) |
-| `S`        | Sync from upstream (reset, stopped only)        |
-| `!`        | Delete task (worktree + branch, stopped only)   |
-| `R`        | Refresh commits ahead                           |
-| `q` / `Q`  | Quit copse                                      |
+| Key          | Action                                          |
+|--------------|-------------------------------------------------|
+| `j` / `↓`   | Select next task                                |
+| `k` / `↑`   | Select previous task                            |
+| `Enter` / `d` | Open diff view (when commits ahead > 0)       |
+| `a`          | Open agent view (running) / Start (stopped)     |
+| `Ctrl-a`     | Start without `--continue` (stopped only)       |
+| `n`          | New task (name → upstream selection)             |
+| `Ctrl-k`     | Kill selected task (running only)               |
+| `M`          | Merge into upstream (ff / squash, stopped only) |
+| `S`          | Sync from upstream (reset, stopped only)        |
+| `!`          | Delete task (worktree + branch, stopped only)   |
+| `R`          | Refresh commits ahead                           |
+| `q` / `Q`   | Quit copse                                      |
 
 ### Task Creation Flow
 
@@ -46,7 +47,7 @@ Each task shows:
 2. Enter a task name → `Enter`
 3. Select upstream branch from list (`j`/`k` → `Enter`)
 4. Task appears as stopped (`■`)
-5. Press `Enter` to start claude in the task's worktree
+5. Press `a` to start claude in the task's worktree
 
 ## Diff View
 
@@ -93,7 +94,8 @@ When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`).
 | Key        | Action                                            |
 |------------|---------------------------------------------------|
 | `j` / `k`  | Select task                                       |
-| `Enter`    | Open agent (running) / Resume (stopped)           |
+| `Enter`    | Open diff view                                    |
+| `a`        | Open agent (running) / Start (stopped)            |
 | `O`        | Tasks fullscreen                                  |
 | `Ctrl-w`   | Switch focus to diff pane                         |
 | `q`        | Close diff, return to tasks fullscreen            |
@@ -137,7 +139,7 @@ When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left,
 |------------|---------------------------------------------------|
 | `j` / `k`  | Select task                                       |
 | `d`        | Open diff view in left pane                        |
-| `Enter`    | Focus agent pane (running) / Resume (stopped)      |
+| `a`        | Focus agent pane (running) / Start (stopped)       |
 | `O`        | Tasks fullscreen                                   |
 | `Ctrl-w`   | Switch focus to agent pane                         |
 | `q`        | Close agent, return to tasks fullscreen            |

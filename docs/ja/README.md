@@ -97,10 +97,11 @@ copse/src
 ## 開発
 
 ```sh
-cargo fmt --check             # フォーマットチェック
+cargo fmt --check             # Rust フォーマットチェック
 cargo clippy -- -D warnings   # リント
 cargo test                    # テスト実行
 cargo build --release         # リリースビルド
+dprint check                  # Markdown フォーマットチェック
 ```
 
 これらのチェックは GitHub Actions により、すべての PR と `main` へのプッシュで自動実行される。

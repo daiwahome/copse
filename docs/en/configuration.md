@@ -82,7 +82,7 @@ page-down = ["Ctrl-F"]
 ## Options
 
 | Option             | Type   | Default     | Description                                    |
-|--------------------|--------|-------------|------------------------------------------------|
+| ------------------ | ------ | ----------- | ---------------------------------------------- |
 | `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response |
 | `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code      |
 | `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks      |
@@ -91,14 +91,14 @@ page-down = ["Ctrl-F"]
 
 When set, copse passes `--permission-mode <mode>` to every `claude` invocation. Available modes:
 
-| Mode                | Description                                          |
-|---------------------|------------------------------------------------------|
-| `default`           | Normal — prompts for every tool use                  |
-| `acceptEdits`       | Auto-approve file edits, prompt for Bash             |
-| `plan`              | Plan only, no execution                              |
-| `auto`              | Auto-approve edits and Bash                          |
-| `bypassPermissions` | Skip all permission checks                           |
-| `dontAsk`           | Skip disallowed operations silently                  |
+| Mode                | Description                              |
+| ------------------- | ---------------------------------------- |
+| `default`           | Normal — prompts for every tool use      |
+| `acceptEdits`       | Auto-approve file edits, prompt for Bash |
+| `plan`              | Plan only, no execution                  |
+| `auto`              | Auto-approve edits and Bash              |
+| `bypassPermissions` | Skip all permission checks               |
+| `dontAsk`           | Skip disallowed operations silently      |
 
 The mode can be changed during a session within Claude Code (e.g. via `/permissions`).
 
@@ -108,34 +108,34 @@ The `[color]` section lets you customize UI colors. Each entry accepts `fg` (for
 
 ### Color Formats
 
-| Format            | Example                      | Description                                    |
-|-------------------|------------------------------|------------------------------------------------|
-| Color name        | `"red"`, `"green"`, `"blue"` | 8 basic colors + `"default"` (terminal default) |
-| 256-color index   | `"166"`, `"234"`             | Numeric string from `0` to `255`               |
+| Format          | Example                      | Description                                     |
+| --------------- | ---------------------------- | ----------------------------------------------- |
+| Color name      | `"red"`, `"green"`, `"blue"` | 8 basic colors + `"default"` (terminal default) |
+| 256-color index | `"166"`, `"234"`             | Numeric string from `0` to `255`                |
 
 Available color names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `default`
 
 ### Color Areas
 
-| Key                   | Description                                  |
-|-----------------------|----------------------------------------------|
-| `cursor`              | Cursor line when focused                     |
-| `cursor-blur`         | Cursor line when unfocused                   |
-| `title-focus-tasks`   | TASKS status bar badge (focused)             |
-| `title-focus-agent`   | AGENT status bar badge (focused)             |
-| `title-focus-diff`    | DIFF status bar badge (focused)              |
-| `title-blur`          | Status bar badge (unfocused)                 |
-| `title-text-focus`    | Status bar text (focused)                    |
-| `title-text-blur`     | Status bar text (unfocused)                  |
-| `title-hints`         | Status bar key hints                         |
-| `search-result`       | Search match highlight                       |
-| `diff-add`            | Diff added lines                             |
-| `diff-del`            | Diff deleted lines                           |
-| `diff-chunk`          | Diff hunk header                             |
-| `diff-header`         | Diff file header                             |
-| `diff-context`        | Diff context lines                           |
-| `list-highlight`      | Task list selected row (focused)             |
-| `list-highlight-blur` | Task list selected row (unfocused)           |
+| Key                   | Description                        |
+| --------------------- | ---------------------------------- |
+| `cursor`              | Cursor line when focused           |
+| `cursor-blur`         | Cursor line when unfocused         |
+| `title-focus-tasks`   | TASKS status bar badge (focused)   |
+| `title-focus-agent`   | AGENT status bar badge (focused)   |
+| `title-focus-diff`    | DIFF status bar badge (focused)    |
+| `title-blur`          | Status bar badge (unfocused)       |
+| `title-text-focus`    | Status bar text (focused)          |
+| `title-text-blur`     | Status bar text (unfocused)        |
+| `title-hints`         | Status bar key hints               |
+| `search-result`       | Search match highlight             |
+| `diff-add`            | Diff added lines                   |
+| `diff-del`            | Diff deleted lines                 |
+| `diff-chunk`          | Diff hunk header                   |
+| `diff-header`         | Diff file header                   |
+| `diff-context`        | Diff context lines                 |
+| `list-highlight`      | Task list selected row (focused)   |
+| `list-highlight-blur` | Task list selected row (unfocused) |
 
 Invalid color names show a warning in the status bar on startup.
 
@@ -153,19 +153,19 @@ Dialog key bindings (confirm dialogs, text input, etc.) are not configurable.
 
 ### Key Notation
 
-| Format       | Example                                                                           | Description                   |
-|--------------|-----------------------------------------------------------------------------------|-------------------------------|
-| Single char  | `"a"`, `"O"`, `"!"`, `"/"`                                                       | Lowercase, uppercase, symbol  |
-| Ctrl combo   | `"Ctrl-O"`, `"Ctrl-W"`                                                           | Control + key                 |
-| Named key    | `"Enter"`, `"Esc"`, `"Tab"`                                                      | Special keys                  |
-| Arrow key    | `"Up"`, `"Down"`, `"Left"`, `"Right"`                                            | Arrow keys                    |
-| Function key | `"F1"` .. `"F12"`                                                                 | Function keys                 |
-| Other        | `"Backspace"`, `"Delete"`, `"Space"`, `"PageUp"`, `"PageDown"`, `"Home"`, `"End"` | Other special keys            |
+| Format       | Example                                                                           | Description                  |
+| ------------ | --------------------------------------------------------------------------------- | ---------------------------- |
+| Single char  | `"a"`, `"O"`, `"!"`, `"/"`                                                        | Lowercase, uppercase, symbol |
+| Ctrl combo   | `"Ctrl-O"`, `"Ctrl-W"`                                                            | Control + key                |
+| Named key    | `"Enter"`, `"Esc"`, `"Tab"`                                                       | Special keys                 |
+| Arrow key    | `"Up"`, `"Down"`, `"Left"`, `"Right"`                                             | Arrow keys                   |
+| Function key | `"F1"` .. `"F12"`                                                                 | Function keys                |
+| Other        | `"Backspace"`, `"Delete"`, `"Space"`, `"PageUp"`, `"PageDown"`, `"Home"`, `"End"` | Other special keys           |
 
 ### Views
 
 | Section         | Description                                                      |
-|-----------------|------------------------------------------------------------------|
+| --------------- | ---------------------------------------------------------------- |
 | `[keys.global]` | Bindings active in all views (checked before view-specific ones) |
 | `[keys.tasks]`  | Task list view                                                   |
 | `[keys.diff]`   | Diff view                                                        |
@@ -195,15 +195,15 @@ The commits ahead count in the Tasks view refreshes every 5 seconds, so you can 
 
 When `auto_permissions` is enabled, copse pre-approves the following safe commands so Claude Code does not prompt for confirmation:
 
-| Category        | Commands                                                    |
-|-----------------|-------------------------------------------------------------|
-| Version control | `git`                                                       |
-| File reading    | `cat`, `head`, `tail`                                       |
-| Search          | `find`, `grep`, `rg`                                        |
-| Directory       | `ls`, `tree`, `pwd`, `mkdir`                                |
-| Text processing | `wc`, `diff`, `sort`, `uniq`, `cut`                         |
-| Utilities       | `echo`, `which`, `file`, `date`, `basename`, `dirname`      |
-| Built-in tools  | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write`    |
+| Category        | Commands                                                 |
+| --------------- | -------------------------------------------------------- |
+| Version control | `git`                                                    |
+| File reading    | `cat`, `head`, `tail`                                    |
+| Search          | `find`, `grep`, `rg`                                     |
+| Directory       | `ls`, `tree`, `pwd`, `mkdir`                             |
+| Text processing | `wc`, `diff`, `sort`, `uniq`, `cut`                      |
+| Utilities       | `echo`, `which`, `file`, `date`, `basename`, `dirname`   |
+| Built-in tools  | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write` |
 
 Build tools (e.g. `cargo`, `npm`) are intentionally excluded as they can execute arbitrary code.
 

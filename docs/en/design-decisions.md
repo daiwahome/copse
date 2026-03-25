@@ -20,14 +20,14 @@ Claude Code has a built-in `--worktree` flag that creates worktrees automaticall
 
 `claude --worktree` is designed for isolating a single Claude session. copse is a task manager that tracks multiple tasks, their upstream branches, and their lifecycle.
 
-| Feature                  | `claude --worktree`                | copse                                      |
-|--------------------------|------------------------------------|--------------------------------------------|
-| Worktree path            | `.claude/worktrees/<n>/`           | `<git-common-dir>/copse-worktrees/<name>`  |
-| Branch naming            | `worktree-<n>` (auto-numbered)     | `copse/<name>` (user-named)                |
-| Upstream tracking        | No                                 | Yes (git tracking branch)                  |
-| Merge / sync operations  | No                                 | Yes (ff, squash, reset)                    |
-| Task lifecycle           | Single session                     | Create / stop / resume / delete            |
-| Git-native inspection    | Limited                            | Full (`git branch -vv`, etc.)              |
+| Feature                 | `claude --worktree`            | copse                                     |
+| ----------------------- | ------------------------------ | ----------------------------------------- |
+| Worktree path           | `.claude/worktrees/<n>/`       | `<git-common-dir>/copse-worktrees/<name>` |
+| Branch naming           | `worktree-<n>` (auto-numbered) | `copse/<name>` (user-named)               |
+| Upstream tracking       | No                             | Yes (git tracking branch)                 |
+| Merge / sync operations | No                             | Yes (ff, squash, reset)                   |
+| Task lifecycle          | Single session                 | Create / stop / resume / delete           |
+| Git-native inspection   | Limited                        | Full (`git branch -vv`, etc.)             |
 
 ### Git-native design
 

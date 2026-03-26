@@ -161,6 +161,15 @@ impl App {
         }
     }
 
+    /// Returns which pane the given view occupies in the current layout.
+    /// Falls back to `Pane::Right` for Single/Fullscreen layouts.
+    fn pane_of(&self, view: View) -> Pane {
+        match self.layout() {
+            ViewLayout::Split(left, _) if left == view => Pane::Left,
+            _ => Pane::Right,
+        }
+    }
+
     pub fn selected_task(&self) -> Option<&Task> {
         self.tasks.get(self.selected_index)
     }
@@ -243,8 +252,8 @@ impl App {
                         self.tasks.push(task);
                     }
                     self.push_agent(id);
-                    self.focus = Pane::Right;
                     self.fullscreen = None;
+                    self.focus = self.pane_of(View::Agent);
                     self.sync_pty_size();
                 }
                 Err(e) => {
@@ -732,8 +741,8 @@ impl App {
                     match task.status {
                         crate::task::TaskStatus::Running => {
                             self.push_agent(task.id);
-                            self.focus = Pane::Right;
                             self.fullscreen = None;
+                            self.focus = self.pane_of(View::Agent);
                             self.sync_pty_size();
                         }
                         crate::task::TaskStatus::Stopped => {
@@ -756,8 +765,8 @@ impl App {
                         match DiffState::from_task(&self.repo_root, &task.name, &task.upstream) {
                             Ok(state) => {
                                 self.push_diff(state);
-                                self.focus = Pane::Right;
                                 self.fullscreen = None;
+                                self.focus = self.pane_of(View::Diff);
                             }
                             Err(e) => {
                                 self.last_error = Some(format!("Failed to get diff: {e}"));

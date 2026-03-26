@@ -34,20 +34,29 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
                 TaskStatus::Stopped => ("■ ", Color::DarkGray, "stopped"),
             };
 
-            let ahead_text = match task.commits_ahead {
-                Some(0) => "synced".to_string(),
-                Some(n) => format!("{n} ahead"),
-                None => String::new(),
+            let ahead_text = if task.upstream_exists {
+                match task.commits_ahead {
+                    Some(0) => "synced".to_string(),
+                    Some(n) => format!("{n} ahead"),
+                    None => String::new(),
+                }
+            } else {
+                String::new()
             };
 
             let upstream_str = format!("(upstream: {})", task.upstream);
+            let upstream_color = if task.upstream_exists {
+                Color::DarkGray
+            } else {
+                Color::Red
+            };
 
             let mut spans = vec![
                 Span::styled(icon, Style::default().fg(icon_color)),
                 Span::raw(format!("{:<width$}", task.name, width = max_name_len)),
                 Span::styled(
                     format!("  {:<width$}", upstream_str, width = max_upstream_len),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(upstream_color),
                 ),
                 Span::styled(
                     format!("  {:<width$}", status_text, width = max_status_len),

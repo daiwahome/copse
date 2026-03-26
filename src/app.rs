@@ -345,11 +345,13 @@ impl App {
         }
     }
 
-    /// Refresh commits_ahead for all tasks.
+    /// Refresh commits_ahead and upstream_exists for all tasks.
     pub fn refresh_commits_ahead(&mut self) {
         for task in &mut self.tasks {
             task.commits_ahead =
                 Task::compute_commits_ahead(&self.repo_root, &task.name, &task.upstream);
+            task.upstream_exists = task.commits_ahead.is_some()
+                || Task::check_upstream_exists(&self.repo_root, &task.upstream);
         }
     }
 

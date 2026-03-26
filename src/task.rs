@@ -40,6 +40,8 @@ pub struct Task {
     pub has_session: bool,
     /// Cached number of commits ahead of upstream (None = not yet computed)
     pub commits_ahead: Option<usize>,
+    /// Whether the upstream branch currently exists in the repo
+    pub upstream_exists: bool,
     /// Path to the git worktree for this task
     #[allow(dead_code)]
     pub worktree_path: PathBuf,
@@ -335,6 +337,18 @@ impl Task {
         }
     }
 
+    /// Check whether the given upstream branch exists in the repo.
+    pub fn check_upstream_exists(repo_root: &Path, upstream: &str) -> bool {
+        std::process::Command::new("git")
+            .args(["rev-parse", "--verify", &format!("refs/heads/{upstream}")])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .current_dir(repo_root)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
     /// Count commits ahead of upstream: `git rev-list --count <upstream>..<branch>`
     pub fn compute_commits_ahead(repo_root: &Path, name: &str, upstream: &str) -> Option<usize> {
         let branch = Self::branch_name(name);
@@ -400,10 +414,27 @@ impl Task {
         rows: u16,
         cols: u16,
     ) -> Self {
-        Self::make_placeholder(name, upstream, false, None, worktree_base_dir, rows, cols)
+        Task {
+            id: uuid::Uuid::new_v4(),
+            worktree_path: Self::worktree_path_for(worktree_base_dir, &name),
+            name,
+            upstream,
+            status: TaskStatus::Stopped,
+            has_session: false,
+            commits_ahead: None,
+            upstream_exists: true,
+            parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
+            waiting_for_input: false,
+            waiting_status_dirty: false,
+            scroll_offset: 0,
+            writer: None,
+            _reader_task: None,
+            master: None,
+            killer: None,
+        }
     }
 
-    /// Construct a placeholder Task in Stopped state for an existing branch,
+    /// Construct a Task in Stopped state for an existing branch,
     /// without spawning any process. Reads upstream from git tracking branch.
     pub fn from_existing(
         name: String,
@@ -413,28 +444,10 @@ impl Task {
         cols: u16,
     ) -> Self {
         let upstream = Self::load_upstream(repo_root, &name).unwrap_or_else(|| "HEAD".to_string());
-        let commits_ahead = Self::compute_commits_ahead(repo_root, &name, &upstream);
         let has_session = Self::session_marker_path_for(worktree_base_dir, &name).exists();
-        Self::make_placeholder(
-            name,
-            upstream,
-            has_session,
-            commits_ahead,
-            worktree_base_dir,
-            rows,
-            cols,
-        )
-    }
-
-    fn make_placeholder(
-        name: String,
-        upstream: String,
-        has_session: bool,
-        commits_ahead: Option<usize>,
-        worktree_base_dir: &Path,
-        rows: u16,
-        cols: u16,
-    ) -> Self {
+        let commits_ahead = Self::compute_commits_ahead(repo_root, &name, &upstream);
+        let upstream_exists =
+            commits_ahead.is_some() || Self::check_upstream_exists(repo_root, &upstream);
         Task {
             id: uuid::Uuid::new_v4(),
             worktree_path: Self::worktree_path_for(worktree_base_dir, &name),
@@ -443,6 +456,7 @@ impl Task {
             status: TaskStatus::Stopped,
             has_session,
             commits_ahead,
+            upstream_exists,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
             waiting_for_input: false,
             waiting_status_dirty: false,
@@ -549,6 +563,7 @@ impl Task {
             status: TaskStatus::Running,
             has_session: false,
             commits_ahead: None,
+            upstream_exists: true,
             worktree_path,
             parser,
             waiting_for_input: false,

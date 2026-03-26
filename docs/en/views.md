@@ -16,13 +16,13 @@ The default view. Shows all tasks with their status, upstream branch, and commit
 
 Each task shows:
 
-| Element                | Description                                            |
-| ---------------------- | ------------------------------------------------------ |
-| Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped          |
-| Name                   | Task name (also used as branch suffix: `copse/<name>`) |
-| Upstream               | The branch the task was forked from                    |
-| Status text            | `running` / `waiting` / `stopped`                      |
-| Commits ahead          | Number of commits ahead of upstream, or `synced`       |
+| Element                | Description                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped                                             |
+| Name                   | Task name (also used as branch suffix: `copse/<name>`)                                    |
+| Upstream               | The branch the task was forked from (turns red when the upstream branch no longer exists) |
+| Status text            | `running` / `waiting` / `stopped`                                                         |
+| Commits ahead          | Number of commits ahead of upstream, or `synced`                                          |
 
 ### Key Bindings
 
@@ -37,6 +37,7 @@ Each task shows:
 | `Ctrl-k`      | Kill selected task (running only)               |
 | `M`           | Merge into upstream (ff / squash, stopped only) |
 | `S`           | Sync from upstream (reset, stopped only)        |
+| `U`           | Change upstream branch (stopped only)           |
 | `!`           | Delete task (worktree + branch, stopped only)   |
 | `R`           | Refresh commits ahead                           |
 | `q` / `Q`     | Quit copse                                      |

@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 use ansi_to_tui::IntoText;
 use ratatui::text::Line;
 
+use crate::config::DiffFilter;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffLineKind {
     Context,
@@ -49,13 +51,13 @@ impl DiffState {
         repo_root: &Path,
         name: &str,
         upstream: &str,
-        diff_filter: &str,
+        diff_filter: &DiffFilter,
     ) -> anyhow::Result<(Self, Option<String>)> {
         let raw = get_diff(repo_root, name, upstream)?;
         let (colored, warning) = match diff_filter {
-            "none" => (None, None),
-            "auto" => (colorize_with_delta(&raw), None),
-            "delta" => {
+            DiffFilter::None => (None, None),
+            DiffFilter::Auto => (colorize_with_delta(&raw), None),
+            DiffFilter::Delta => {
                 let colored = colorize_with_delta(&raw);
                 let warning = if colored.is_none() {
                     Some("diff_filter = \"delta\" but delta is not installed".to_string())
@@ -64,12 +66,6 @@ impl DiffState {
                 };
                 (colored, warning)
             }
-            other => (
-                None,
-                Some(format!(
-                    "Unknown diff_filter value: \"{other}\", using none"
-                )),
-            ),
         };
         Ok((
             Self::parse(&raw, name.to_string(), colored.as_deref()),
@@ -295,14 +291,16 @@ fn colorize_with_delta(raw_diff: &str) -> Option<String> {
         .spawn()
         .ok()?;
 
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(raw_diff.as_bytes())
-        .ok()?;
+    let mut stdin = child.stdin.take().unwrap();
+    let output = std::thread::scope(|s| {
+        s.spawn(|| {
+            let _ = stdin.write_all(raw_diff.as_bytes());
+            drop(stdin);
+        });
+        child.wait_with_output()
+    });
 
-    let output = child.wait_with_output().ok()?;
+    let output = output.ok()?;
     if output.status.success() {
         Some(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {

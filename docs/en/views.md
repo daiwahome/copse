@@ -76,21 +76,28 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 
 ### Key Bindings (Diff pane)
 
-| Key       | Action                                    |
-| --------- | ----------------------------------------- |
-| `j` / `↓` | Move cursor down                          |
-| `k` / `↑` | Move cursor up                            |
-| `Ctrl-b`  | Scroll up one page                        |
-| `Ctrl-f`  | Scroll down one page                      |
-| `/`       | Search (enter pattern, `Enter` to search) |
-| `n`       | Next search match                         |
-| `N`       | Previous search match                     |
-| `@`       | Jump to next hunk (sets pattern to `^@@`) |
-| `R`       | Refresh diff                              |
-| `O`       | Toggle split ↔ fullscreen                 |
-| `q`       | Close diff view                           |
+| Key       | Action                                              |
+| --------- | --------------------------------------------------- |
+| `j` / `↓` | Move cursor down                                    |
+| `k` / `↑` | Move cursor up                                      |
+| `Ctrl-b`  | Scroll up one page                                  |
+| `Ctrl-f`  | Scroll down one page                                |
+| `/`       | Search (enter pattern, `Enter` to search)           |
+| `n`       | Next search match                                   |
+| `N`       | Previous search match                               |
+| `@`       | Jump to next hunk (sets pattern to `^@@`)           |
+| `R`       | Refresh diff                                        |
+| `O`       | Toggle split ↔ fullscreen                           |
+| `q`       | Close diff view                                     |
+| `o`       | Add review comment on current line (inline editing) |
+| `e`       | Edit existing review comment                        |
+| `!`       | Delete review comment on current line               |
+| `c`       | Jump to next comment (then `n`/`N` to navigate)     |
+| `S`       | Send all comments to agent (opens preview dialog)   |
+| `Ctrl-s`  | Confirm comment (while editing)                     |
+| `Esc`     | Cancel comment editing                              |
 
-When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`).
+When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`). After pressing `c`, `n`/`N` navigate between commented lines instead.
 
 ### Key Bindings (Tasks pane, left focus)
 

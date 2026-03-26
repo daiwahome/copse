@@ -18,7 +18,7 @@ pub struct SpawnParams {
     pub id: TaskId,
     pub name: String,
     pub upstream: String,
-    pub has_run: bool,
+    pub has_session: bool,
     pub repo_root: PathBuf,
     pub worktree_base_dir: PathBuf,
     pub config: Config,
@@ -35,9 +35,9 @@ pub struct Task {
     pub name: String,
     pub upstream: String,
     pub status: TaskStatus,
-    /// Whether claude has been launched at least once for this task.
-    /// Used to pass --continue on subsequent launches.
-    pub has_run: bool,
+    /// Whether a continuable Claude session exists for this task.
+    /// When true, `--continue` is passed on the next launch.
+    pub has_session: bool,
     /// Cached number of commits ahead of upstream (None = not yet computed)
     pub commits_ahead: Option<usize>,
     /// Path to the git worktree for this task
@@ -109,6 +109,17 @@ impl Task {
     /// Derive the worktree path for a given task name.
     pub fn worktree_path_for(worktree_base_dir: &Path, name: &str) -> PathBuf {
         worktree_base_dir.join(name)
+    }
+
+    /// Path to the session marker file for a given task name.
+    /// Placed in `worktree_base_dir` (outside the worktree) to avoid git tracking.
+    fn session_marker_path_for(worktree_base_dir: &Path, name: &str) -> PathBuf {
+        worktree_base_dir.join(format!("{name}.has-session"))
+    }
+
+    fn session_marker_path(&self) -> PathBuf {
+        let base = self.worktree_path.parent().unwrap_or(&self.worktree_path);
+        Self::session_marker_path_for(base, &self.name)
     }
 
     /// Branch name used for a task: `copse/<name>`
@@ -403,10 +414,11 @@ impl Task {
     ) -> Self {
         let upstream = Self::load_upstream(repo_root, &name).unwrap_or_else(|| "HEAD".to_string());
         let commits_ahead = Self::compute_commits_ahead(repo_root, &name, &upstream);
+        let has_session = Self::session_marker_path_for(worktree_base_dir, &name).exists();
         Self::make_placeholder(
             name,
             upstream,
-            true,
+            has_session,
             commits_ahead,
             worktree_base_dir,
             rows,
@@ -417,7 +429,7 @@ impl Task {
     fn make_placeholder(
         name: String,
         upstream: String,
-        has_run: bool,
+        has_session: bool,
         commits_ahead: Option<usize>,
         worktree_base_dir: &Path,
         rows: u16,
@@ -429,7 +441,7 @@ impl Task {
             name,
             upstream,
             status: TaskStatus::Stopped,
-            has_run,
+            has_session,
             commits_ahead,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
             waiting_for_input: false,
@@ -443,7 +455,7 @@ impl Task {
     }
 
     /// Spawn `claude` in the task's worktree inside a PTY.
-    /// If `has_run` is true, passes `--continue` to resume the last session.
+    /// If `has_session` is true, passes `--continue` to resume the last session.
     /// The `id` parameter preserves the task's identity across restarts.
     pub async fn spawn(
         params: SpawnParams,
@@ -455,7 +467,7 @@ impl Task {
             id,
             name,
             upstream,
-            has_run,
+            has_session,
             repo_root,
             worktree_base_dir,
             config,
@@ -479,7 +491,7 @@ impl Task {
         })?;
 
         let mut cmd = CommandBuilder::new("claude");
-        if has_run {
+        if has_session {
             cmd.arg("--continue");
         }
         cmd.args(["--permission-mode", &permission_mode]);
@@ -535,7 +547,7 @@ impl Task {
             name,
             upstream,
             status: TaskStatus::Running,
-            has_run: true,
+            has_session: false,
             commits_ahead: None,
             worktree_path,
             parser,
@@ -588,6 +600,9 @@ impl Task {
             );
         }
 
+        // Clean up session marker
+        let _ = std::fs::remove_file(Self::session_marker_path_for(worktree_base_dir, name));
+
         Ok(())
     }
 
@@ -637,6 +652,10 @@ impl Task {
     pub fn write_input(&mut self, data: &[u8]) -> anyhow::Result<()> {
         if let Some(writer) = &mut self.writer {
             writer.write_all(data)?;
+            if !self.has_session {
+                self.has_session = true;
+                let _ = std::fs::write(self.session_marker_path(), "");
+            }
         }
         Ok(())
     }

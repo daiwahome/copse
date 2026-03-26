@@ -9,6 +9,7 @@ copse is designed to be git-native. Every concept and operation maps directly to
 | Task          | Branch `copse/<name>` + worktree                 |
 | Upstream      | Tracking branch (`git branch --set-upstream-to`) |
 | Task status   | Runtime only (not stored in git)                 |
+| Session state | Marker file outside git (`<name>.has-session`)   |
 | Commits ahead | `git rev-list --count <upstream>..<branch>`      |
 
 ## Operations → Git Commands

@@ -5,6 +5,25 @@ use serde::Deserialize;
 
 use crate::keybind::RawKeyBindings;
 
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiffFilter {
+    #[default]
+    Auto,
+    Delta,
+    None,
+}
+
+impl std::fmt::Display for DiffFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DiffFilter::Auto => write!(f, "auto"),
+            DiffFilter::Delta => write!(f, "delta"),
+            DiffFilter::None => write!(f, "none"),
+        }
+    }
+}
+
 fn config_path() -> anyhow::Result<PathBuf> {
     let strategy = etcetera::base_strategy::Xdg::new()
         .map_err(|e| anyhow::anyhow!("Failed to determine config directory: {e}"))?;
@@ -16,8 +35,8 @@ pub struct Config {
     pub auto_commit: bool,
     pub auto_permissions: bool,
     pub permission_mode: String,
-    #[serde(default = "default_diff_filter")]
-    pub diff_filter: String,
+    #[serde(default)]
+    pub diff_filter: DiffFilter,
     #[serde(default)]
     pub color: ColorConfig,
     #[serde(default)]
@@ -30,7 +49,7 @@ impl Default for Config {
             auto_commit: false,
             auto_permissions: false,
             permission_mode: "default".to_string(),
-            diff_filter: default_diff_filter(),
+            diff_filter: DiffFilter::default(),
             color: ColorConfig::default(),
             keys: RawKeyBindings::default(),
         }
@@ -225,10 +244,6 @@ impl Default for ColorConfig {
 }
 
 // Default value functions for serde
-fn default_diff_filter() -> String {
-    "auto".to_string()
-}
-
 fn default_cursor() -> ColorEntry {
     ColorEntry::new().bg("236")
 }

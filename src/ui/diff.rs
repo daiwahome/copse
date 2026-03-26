@@ -4,6 +4,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::diff::{DiffLineKind, DiffState};
 use crate::theme::Theme;
@@ -48,7 +49,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
                 }
 
                 // Pad to full width
-                let content_len: usize = spans.iter().map(|s| s.content.len()).sum();
+                let content_len: usize = spans.iter().map(|s| s.content.width()).sum();
                 let pad = width.saturating_sub(content_len);
                 if pad > 0 {
                     let pad_style = spans.last().map(|s| s.style).unwrap_or_default();
@@ -86,7 +87,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
                 };
 
                 if is_cursor || is_search_match {
-                    let pad = width.saturating_sub(display_text.len());
+                    let pad = width.saturating_sub(display_text.width());
                     Line::from(Span::styled(
                         format!("{display_text}{}", " ".repeat(pad)),
                         final_style,

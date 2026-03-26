@@ -16,13 +16,13 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 
 各タスクの表示要素:
 
-| 要素                       | 説明                                                |
-| -------------------------- | --------------------------------------------------- |
-| アイコン (`▶` / `⏸` / `■`) | 実行中 (処理中) / 待機中 (プロンプト) / 停止        |
-| 名前                       | タスク名 (ブランチ名のサフィックス: `copse/<name>`) |
-| Upstream                   | タスクの分岐元ブランチ                              |
-| ステータス                 | `running` / `waiting` / `stopped`                   |
-| Commits ahead              | upstream からの差分コミット数、または `synced`      |
+| 要素                       | 説明                                                         |
+| -------------------------- | ------------------------------------------------------------ |
+| アイコン (`▶` / `⏸` / `■`) | 実行中 (処理中) / 待機中 (プロンプト) / 停止                 |
+| 名前                       | タスク名 (ブランチ名のサフィックス: `copse/<name>`)          |
+| Upstream                   | タスクの分岐元ブランチ (upstream が存在しない場合は赤く表示) |
+| ステータス                 | `running` / `waiting` / `stopped`                            |
+| Commits ahead              | upstream からの差分コミット数、または `synced`               |
 
 ### キーバインド
 
@@ -37,6 +37,7 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 | `Ctrl-k`      | タスクを停止 (実行中のみ)                    |
 | `M`           | upstream にマージ (ff / squash, 停止中のみ)  |
 | `S`           | upstream から同期 (reset, 停止中のみ)        |
+| `U`           | upstream ブランチを変更 (停止中のみ)         |
 | `!`           | タスクを削除 (worktree + branch, 停止中のみ) |
 | `R`           | commits ahead を更新                         |
 | `q` / `Q`     | copse を終了                                 |

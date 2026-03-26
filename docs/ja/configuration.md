@@ -19,6 +19,7 @@ copse --init
 auto_commit = false
 auto_permissions = false
 permission_mode = "default"
+diff_filter = "auto"
 
 [color]
 cursor = { bg = "236" }
@@ -81,11 +82,12 @@ page-down = ["Ctrl-F"]
 
 ## オプション
 
-| オプション         | 型     | デフォルト  | 説明                                        |
-| ------------------ | ------ | ----------- | ------------------------------------------- |
-| `auto_commit`      | bool   | `false`     | Claude の応答ごとに変更を自動コミット       |
-| `auto_permissions` | bool   | `false`     | 安全なコマンドを Claude Code で自動承認     |
-| `permission_mode`  | string | `"default"` | 全タスクの Claude Code パーミッションモード |
+| オプション         | 型     | デフォルト  | 説明                                           |
+| ------------------ | ------ | ----------- | ---------------------------------------------- |
+| `auto_commit`      | bool   | `false`     | Claude の応答ごとに変更を自動コミット          |
+| `auto_permissions` | bool   | `false`     | 安全なコマンドを Claude Code で自動承認        |
+| `permission_mode`  | string | `"default"` | 全タスクの Claude Code パーミッションモード    |
+| `diff_filter`      | string | `"auto"`    | Diff の着色方法: `"auto"`, `"delta"`, `"none"` |
 
 ### Permission Mode
 
@@ -101,6 +103,18 @@ page-down = ["Ctrl-F"]
 | `dontAsk`           | 許可されていない操作を黙ってスキップ |
 
 session 中に Claude Code 内でモードを変更することもできる（例: `/permissions`）。
+
+### Diff Filter
+
+diff view での着色方法を制御する。
+
+| 値      | 説明                                                                       |
+| ------- | -------------------------------------------------------------------------- |
+| `auto`  | [delta](https://github.com/dandavison/delta) があれば使用、なければ `none` |
+| `delta` | 常に delta を使用（未インストールの場合は `none` にフォールバック）        |
+| `none`  | 外部フィルターなし — tig 風のシンプルな配色（緑/赤の前景色）               |
+
+delta 使用時はシンタックスハイライト、背景色による差分表示、単語レベルの差分強調が有効になる。
 
 ## カラーテーマ
 

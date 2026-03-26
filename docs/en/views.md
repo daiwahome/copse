@@ -52,7 +52,9 @@ Each task shows:
 
 ## Diff View
 
-Shows the unified diff between the task branch and its upstream. Displays the output of `git diff <upstream>..<branch>` with tig-style coloring.
+Shows the unified diff between the task branch and its upstream. Displays the output of `git diff <upstream>..<branch>`.
+
+When [delta](https://github.com/dandavison/delta) is installed, the diff view uses it for syntax highlighting, colored backgrounds, and word-level emphasis. Without delta, diffs are shown with plain tig-style coloring (green/red foreground).
 
 ### Layout Modes
 

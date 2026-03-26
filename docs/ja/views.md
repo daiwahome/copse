@@ -52,7 +52,9 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 
 ## Diff View
 
-タスクブランチと upstream の unified diff を表示する。`git diff <upstream>..<branch>` の出力を tig 風の配色で表示する。
+タスクブランチと upstream の unified diff を表示する。`git diff <upstream>..<branch>` の出力を表示する。
+
+[delta](https://github.com/dandavison/delta) がインストールされている場合、シンタックスハイライト、背景色による差分表示、単語レベルの差分強調が有効になる。delta がない場合は tig 風のシンプルな配色（緑/赤の前景色）で表示される。
 
 ### レイアウトモード
 

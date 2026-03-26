@@ -268,8 +268,10 @@ impl App {
                     }
                     task.waiting_for_input = false;
                     task.waiting_status_dirty = false;
-                    task.commits_ahead =
-                        Task::compute_commits_ahead(&self.repo_root, &task.name, &task.upstream);
+                    task.commits_ahead = task
+                        .upstream
+                        .as_ref()
+                        .and_then(|u| Task::compute_commits_ahead(&self.repo_root, &task.name, u));
                 }
                 if self.focused_task_id() == Some(id) {
                     self.close_agent();
@@ -365,10 +367,15 @@ impl App {
     /// Refresh commits_ahead and upstream_exists for all tasks.
     pub fn refresh_commits_ahead(&mut self) {
         for task in &mut self.tasks {
-            task.commits_ahead =
-                Task::compute_commits_ahead(&self.repo_root, &task.name, &task.upstream);
-            task.upstream_exists = task.commits_ahead.is_some()
-                || Task::check_upstream_exists(&self.repo_root, &task.upstream);
+            if let Some(upstream) = &task.upstream {
+                task.commits_ahead =
+                    Task::compute_commits_ahead(&self.repo_root, &task.name, upstream);
+                task.upstream_exists = task.commits_ahead.is_some()
+                    || Task::check_upstream_exists(&self.repo_root, upstream);
+            } else {
+                task.commits_ahead = None;
+                task.upstream_exists = false;
+            }
         }
     }
 
@@ -565,7 +572,7 @@ impl App {
                 let worktree_base_dir = self.worktree_base_dir.clone();
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let name = task.name.clone();
-                    let upstream = task.upstream.clone();
+                    let upstream = task.upstream.clone().unwrap();
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
@@ -609,7 +616,7 @@ impl App {
                 let repo_root = self.repo_root.clone();
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let name = task.name.clone();
-                    let upstream = task.upstream.clone();
+                    let upstream = task.upstream.clone().unwrap();
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
@@ -639,7 +646,7 @@ impl App {
             KeyCode::Char('s') => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     let name = task.name.clone();
-                    let upstream = task.upstream.clone();
+                    let upstream = task.upstream.clone().unwrap();
                     let _ = self
                         .event_tx
                         .try_send(AppEvent::SquashMerge { name, upstream });
@@ -679,7 +686,7 @@ impl App {
                     let name = task.name.clone();
                     match Task::set_upstream(&self.repo_root, &name, &new_upstream) {
                         Ok(()) => {
-                            task.upstream = new_upstream;
+                            task.upstream = Some(new_upstream);
                             self.refresh_commits_ahead();
                         }
                         Err(e) => {
@@ -769,18 +776,25 @@ impl App {
             }
             TasksAction::ShowDiff => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
-                    let ahead = task.commits_ahead.unwrap_or(0);
-                    if ahead == 0 {
-                        self.last_error = Some("No commits ahead of upstream".to_string());
+                    if !task.upstream_exists {
+                        self.last_error = Some(
+                            "No valid upstream branch. Press U to change upstream.".to_string(),
+                        );
                     } else {
-                        match DiffState::from_task(&self.repo_root, &task.name, &task.upstream) {
-                            Ok(state) => {
-                                self.push_diff(state);
-                                self.fullscreen = None;
-                                self.focus = self.pane_of(View::Diff);
-                            }
-                            Err(e) => {
-                                self.last_error = Some(format!("Failed to get diff: {e}"));
+                        let ahead = task.commits_ahead.unwrap_or(0);
+                        if ahead == 0 {
+                            self.last_error = Some("No commits ahead of upstream".to_string());
+                        } else {
+                            let upstream = task.upstream.as_ref().unwrap();
+                            match DiffState::from_task(&self.repo_root, &task.name, upstream) {
+                                Ok(state) => {
+                                    self.push_diff(state);
+                                    self.fullscreen = None;
+                                    self.focus = self.pane_of(View::Diff);
+                                }
+                                Err(e) => {
+                                    self.last_error = Some(format!("Failed to get diff: {e}"));
+                                }
                             }
                         }
                     }
@@ -788,7 +802,11 @@ impl App {
             }
             TasksAction::Merge => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
-                    if task.is_stopped() {
+                    if !task.upstream_exists {
+                        self.last_error = Some(
+                            "No valid upstream branch. Press U to change upstream.".to_string(),
+                        );
+                    } else if task.is_stopped() {
                         self.dialog = Some(Dialog::ConfirmMerge);
                     } else {
                         self.last_error = Some("Stop the task before merging".to_string());
@@ -797,7 +815,11 @@ impl App {
             }
             TasksAction::Sync => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
-                    if task.is_stopped() {
+                    if !task.upstream_exists {
+                        self.last_error = Some(
+                            "No valid upstream branch. Press U to change upstream.".to_string(),
+                        );
+                    } else if task.is_stopped() {
                         self.dialog = Some(Dialog::ConfirmSync);
                     } else {
                         self.last_error = Some("Stop the task before syncing".to_string());
@@ -819,7 +841,7 @@ impl App {
                             self.last_error =
                                 Some("No eligible upstream branches found".to_string());
                         } else {
-                            let current_upstream = &task.upstream;
+                            let current_upstream = task.upstream.as_deref().unwrap_or("");
                             let selected = branches
                                 .iter()
                                 .position(|b| b == current_upstream)
@@ -1013,10 +1035,11 @@ impl App {
     fn update_diff_for_selected_task(&mut self) {
         if let Some(task) = self.tasks.get(self.selected_index) {
             let ahead = task.commits_ahead.unwrap_or(0);
-            if ahead == 0 {
+            if ahead == 0 || !task.upstream_exists {
                 self.close_diff();
             } else {
-                match DiffState::from_task(&self.repo_root, &task.name, &task.upstream) {
+                let upstream = task.upstream.as_ref().unwrap();
+                match DiffState::from_task(&self.repo_root, &task.name, upstream) {
                     Ok(state) => {
                         self.update_diff(state);
                     }

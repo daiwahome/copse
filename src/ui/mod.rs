@@ -599,7 +599,7 @@ fn render_confirm_sync_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
     let (name, upstream) = app
         .selected_task()
-        .map(|t| (t.name.as_str(), t.upstream.as_str()))
+        .map(|t| (t.name.as_str(), t.upstream.as_deref().unwrap_or("?")))
         .unwrap_or(("?", "?"));
 
     let Some(inner) =
@@ -628,7 +628,7 @@ fn render_confirm_merge_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
     let (name, upstream) = app
         .selected_task()
-        .map(|t| (t.name.as_str(), t.upstream.as_str()))
+        .map(|t| (t.name.as_str(), t.upstream.as_deref().unwrap_or("?")))
         .unwrap_or(("?", "?"));
 
     let Some(inner) =

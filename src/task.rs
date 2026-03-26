@@ -17,7 +17,7 @@ const SCROLLBACK_LEN: usize = 10_000;
 pub struct SpawnParams {
     pub id: TaskId,
     pub name: String,
-    pub upstream: String,
+    pub upstream: Option<String>,
     pub has_session: bool,
     pub repo_root: PathBuf,
     pub worktree_base_dir: PathBuf,
@@ -34,7 +34,7 @@ pub enum TaskStatus {
 pub struct Task {
     pub id: TaskId,
     pub name: String,
-    pub upstream: String,
+    pub upstream: Option<String>,
     pub status: TaskStatus,
     /// Whether a continuable Claude session exists for this task.
     /// When true, `--continue` is passed on the next launch.
@@ -419,7 +419,7 @@ impl Task {
             id: uuid::Uuid::new_v4(),
             worktree_path: Self::worktree_path_for(worktree_base_dir, &name),
             name,
-            upstream,
+            upstream: Some(upstream),
             status: TaskStatus::Stopped,
             has_session: false,
             commits_ahead: None,
@@ -444,11 +444,14 @@ impl Task {
         rows: u16,
         cols: u16,
     ) -> Self {
-        let upstream = Self::load_upstream(repo_root, &name).unwrap_or_else(|| "HEAD".to_string());
+        let upstream = Self::load_upstream(repo_root, &name);
         let has_session = Self::session_marker_path_for(worktree_base_dir, &name).exists();
-        let commits_ahead = Self::compute_commits_ahead(repo_root, &name, &upstream);
-        let upstream_exists =
-            commits_ahead.is_some() || Self::check_upstream_exists(repo_root, &upstream);
+        let commits_ahead = upstream
+            .as_ref()
+            .and_then(|u| Self::compute_commits_ahead(repo_root, &name, u));
+        let upstream_exists = upstream
+            .as_ref()
+            .is_some_and(|u| commits_ahead.is_some() || Self::check_upstream_exists(repo_root, u));
         Task {
             id: uuid::Uuid::new_v4(),
             worktree_path: Self::worktree_path_for(worktree_base_dir, &name),
@@ -489,8 +492,13 @@ impl Task {
         } = params;
 
         // Ensure the worktree (and branch) exist before launching claude
-        let worktree_path =
-            Self::ensure_worktree(&repo_root, &worktree_base_dir, &name, &upstream).await?;
+        let worktree_path = Self::ensure_worktree(
+            &repo_root,
+            &worktree_base_dir,
+            &name,
+            upstream.as_deref().unwrap_or(""),
+        )
+        .await?;
 
         // Set up .claude/settings.local.json based on config
         let wp = worktree_path.clone();

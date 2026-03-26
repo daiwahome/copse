@@ -21,61 +21,28 @@ fn diff_state_mut(view_stack: &mut [ChildView]) -> Option<&mut DiffState> {
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
+    let area = frame.area();
     match app.layout() {
-        ViewLayout::Single(View::Tasks) => {
-            render_single_tasks(frame, frame.area(), app);
+        ViewLayout::Single(View::Tasks) | ViewLayout::Fullscreen(View::Tasks) => {
+            render_single_tasks(frame, area, app);
         }
-        ViewLayout::Fullscreen(View::Tasks) => {
-            // Tasks fullscreen: child views preserved but hidden
-            render_single_tasks(frame, frame.area(), app);
+        ViewLayout::Single(View::Agent) | ViewLayout::Fullscreen(View::Agent) => {
+            render_single_agent(frame, area, app);
         }
-        ViewLayout::Fullscreen(View::Agent) => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Fill(1), Constraint::Length(1)])
-                .split(frame.area());
-            let scroll_offset = agent::render(frame, chunks[0], app);
-            render_agent_status_bar(frame, chunks[1], app, true, scroll_offset, true);
-        }
-        ViewLayout::Fullscreen(View::Diff) => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Fill(1), Constraint::Length(1)])
-                .split(frame.area());
-            if let Some(state) = diff_state_mut(&mut app.view_stack) {
-                diff::render(frame, chunks[0], state, true, &app.theme);
-            }
-            render_diff_status_bar(frame, chunks[1], app, true);
+        ViewLayout::Single(View::Diff) | ViewLayout::Fullscreen(View::Diff) => {
+            render_single_diff(frame, area, app);
         }
         ViewLayout::Split(View::Tasks, View::Agent) => {
-            render_split_tasks_agent(frame, frame.area(), app);
+            render_split_tasks_agent(frame, area, app);
         }
         ViewLayout::Split(View::Tasks, View::Diff) => {
-            render_split_tasks_diff(frame, frame.area(), app);
+            render_split_tasks_diff(frame, area, app);
         }
         ViewLayout::Split(View::Diff, View::Agent) => {
-            render_split_diff_agent(frame, frame.area(), app);
-        }
-        ViewLayout::Single(View::Agent) => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Fill(1), Constraint::Length(1)])
-                .split(frame.area());
-            let scroll_offset = agent::render(frame, chunks[0], app);
-            render_agent_status_bar(frame, chunks[1], app, true, scroll_offset, true);
-        }
-        ViewLayout::Single(View::Diff) => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Fill(1), Constraint::Length(1)])
-                .split(frame.area());
-            if let Some(state) = diff_state_mut(&mut app.view_stack) {
-                diff::render(frame, chunks[0], state, true, &app.theme);
-            }
-            render_diff_status_bar(frame, chunks[1], app, true);
+            render_split_diff_agent(frame, area, app);
         }
         _ => {
-            render_single_tasks(frame, frame.area(), app);
+            render_single_tasks(frame, area, app);
         }
     }
 }
@@ -87,12 +54,30 @@ fn render_single_tasks(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(area);
 
-    list::render(frame, chunks[0], app, true);
+    render_tasks_pane(frame, chunks[0], app, true);
+    render_tasks_status_bar(frame, chunks[1], app);
+}
 
-    // Render dialog overlays
-    render_dialog_overlay(frame, chunks[0], app);
+/// Single/fullscreen agent view.
+fn render_single_agent(frame: &mut Frame, area: Rect, app: &mut App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(area);
+    let scroll_offset = agent::render(frame, chunks[0], app);
+    render_agent_status_bar(frame, chunks[1], app, true, scroll_offset, true);
+}
 
-    render_single_status_bar(frame, chunks[1], app, 0);
+/// Single/fullscreen diff view.
+fn render_single_diff(frame: &mut Frame, area: Rect, app: &mut App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(1)])
+        .split(area);
+    if let Some(state) = diff_state_mut(&mut app.view_stack) {
+        diff::render(frame, chunks[0], state, true, &app.theme);
+    }
+    render_diff_status_bar(frame, chunks[1], app, true);
 }
 
 /// Split view: [tasks | agent]
@@ -123,7 +108,7 @@ fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
-    list::render(frame, left_rows[0], app, focus == Pane::Left);
+    render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
     let hints: &[(&str, &str)] = if focus == Pane::Left {
         &[
             ("j/k", "select"),
@@ -182,7 +167,7 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
-    list::render(frame, left_rows[0], app, focus == Pane::Left);
+    render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
     let hints: &[(&str, &str)] = if focus == Pane::Left {
         &[
             ("j/k", "select"),
@@ -262,6 +247,12 @@ fn render_split_diff_agent(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 }
 
+/// Render the tasks list pane (list + dialog overlay).
+fn render_tasks_pane(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
+    list::render(frame, area, app, focused);
+    render_dialog_overlay(frame, area, app);
+}
+
 /// Render dialog overlay if present.
 fn render_dialog_overlay(frame: &mut Frame, area: Rect, app: &App) {
     match &app.dialog {
@@ -313,35 +304,6 @@ fn render_split_tasks_status_bar(
         hints: t.title_hints,
     };
     render_badge_status_bar(frame, area, " TASKS ", &styles, &left, hints);
-}
-
-/// Single status bar for full-screen modes (Tasks, Agent full, dialogs).
-fn render_single_status_bar(frame: &mut Frame, area: Rect, app: &App, scroll_offset: usize) {
-    let width = area.width as usize;
-
-    if let Some(err) = &app.last_error {
-        let text = format!(" {err}");
-        let padding = " ".repeat(width.saturating_sub(text.len()));
-        let bar = Paragraph::new(Line::from(Span::styled(
-            format!("{text}{padding}"),
-            Style::default().fg(Color::White).bg(Color::Red),
-        )));
-        frame.render_widget(bar, area);
-        return;
-    }
-
-    match app.layout() {
-        ViewLayout::Fullscreen(View::Agent) => {
-            render_agent_status_bar(frame, area, app, true, scroll_offset, true);
-        }
-        ViewLayout::Fullscreen(View::Diff) => {
-            render_diff_status_bar(frame, area, app, true);
-        }
-        _ => {
-            // Tasks or Tasks fullscreen — show task bar with dialog-aware hints
-            render_tasks_status_bar(frame, area, app);
-        }
-    }
 }
 
 /// Status bar for the tasks view.

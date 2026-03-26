@@ -787,7 +787,7 @@ impl App {
                     if !task.is_stopped() {
                         self.last_error =
                             Some("Stop the task before changing upstream".to_string());
-                    } else if !task.has_run {
+                    } else if !task.worktree_path.exists() {
                         self.last_error = Some(
                             "Launch the task at least once before changing upstream".to_string(),
                         );
@@ -1031,7 +1031,7 @@ impl App {
             id: task.id,
             name: task.name.clone(),
             upstream: task.upstream.clone(),
-            has_run: if force_fresh { false } else { task.has_run },
+            has_session: if force_fresh { false } else { task.has_session },
             repo_root: self.repo_root.clone(),
             worktree_base_dir: self.worktree_base_dir.clone(),
             config: self.config.clone(),

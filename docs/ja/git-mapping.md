@@ -9,6 +9,7 @@ copse は git ネイティブな設計。全ての概念と操作は標準的な
 | Task          | ブランチ `copse/<name>` + worktree               |
 | Upstream      | Tracking branch (`git branch --set-upstream-to`) |
 | Task status   | ランタイムのみ (git に保存されない)              |
+| Session state | git 外のマーカーファイル (`<name>.has-session`)  |
 | Commits ahead | `git rev-list --count <upstream>..<branch>`      |
 
 ## 操作 → Git コマンド

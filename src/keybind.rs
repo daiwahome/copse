@@ -39,6 +39,11 @@ pub enum DiffAction {
     Close,
     PageUp,
     PageDown,
+    AddComment,
+    EditComment,
+    DeleteComment,
+    SendReview,
+    NextComment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -256,6 +261,11 @@ fn diff_action_defs() -> &'static [ActionDef<DiffAction>] {
         "close" => DiffAction::Close, ["q", "Esc", "Ctrl-Q"];
         "page-up" => DiffAction::PageUp, ["Ctrl-B"];
         "page-down" => DiffAction::PageDown, ["Ctrl-F"];
+        "add-comment" => DiffAction::AddComment, ["o"];
+        "edit-comment" => DiffAction::EditComment, ["e"];
+        "delete-comment" => DiffAction::DeleteComment, ["!"];
+        "send-review" => DiffAction::SendReview, ["S"];
+        "next-comment" => DiffAction::NextComment, ["c"];
     }
 }
 

@@ -10,8 +10,28 @@ use ratatui::{
     Frame,
 };
 
+use unicode_width::UnicodeWidthStr;
+
 use crate::app::{App, ChildView, Dialog, Pane, View, ViewLayout};
 use crate::diff::DiffState;
+
+/// Truncate a string to fit within `max_width` display columns (Unicode-safe).
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    if s.width() <= max_width {
+        return s.to_string();
+    }
+    let mut width = 0;
+    let mut end = 0;
+    for (i, c) in s.char_indices() {
+        let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if width + cw > max_width {
+            break;
+        }
+        width += cw;
+        end = i + c.len_utf8();
+    }
+    s[..end].to_string()
+}
 
 fn diff_state_mut(view_stack: &mut [ChildView]) -> Option<&mut DiffState> {
     view_stack.iter_mut().find_map(|v| match v {
@@ -44,6 +64,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         _ => {
             render_single_tasks(frame, area, app);
         }
+    }
+
+    // Render send review dialog as a full-screen overlay (works from any view)
+    if let Some(Dialog::ConfirmSendReview {
+        prompt,
+        scroll_offset,
+    }) = &app.dialog
+    {
+        render_send_review_dialog(frame, area, prompt, *scroll_offset);
     }
 }
 
@@ -272,7 +301,7 @@ fn render_dialog_overlay(frame: &mut Frame, area: Rect, app: &App) {
         Some(Dialog::ChangeUpstream { branches, selected }) => {
             render_change_upstream_dialog(frame, area, app, branches, *selected);
         }
-        Some(Dialog::DiffSearch { .. }) | None => {}
+        Some(Dialog::ConfirmSendReview { .. }) | Some(Dialog::DiffSearch { .. }) | None => {}
     }
 }
 
@@ -817,44 +846,51 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         return;
     }
 
+    let is_editing = app.diff_state().map(|s| s.is_editing()).unwrap_or(false);
+    let comment_count = app.diff_state().map(|s| s.comment_count()).unwrap_or(0);
+
     let location = if let Some(state) = app.diff_state() {
-        format!(" {}", state.task_name)
+        if comment_count > 0 {
+            format!(
+                " {} [{} comment{}]",
+                state.task_name,
+                comment_count,
+                if comment_count == 1 { "" } else { "s" }
+            )
+        } else {
+            format!(" {}", state.task_name)
+        }
     } else {
         String::new()
     };
 
     let is_full = app.fullscreen == Some(View::Diff);
     let in_split_with_agent = app.has_view(View::Agent);
-    let hints: &[(&str, &str)] = if in_split_with_agent {
-        &[
-            ("j/k", "move"),
-            ("/", "search"),
-            ("@", "hunk"),
-            ("R", "refresh"),
-            ("O", "full"),
-            ("C-w", "agent"),
-            ("q", "back"),
-        ]
-    } else if is_full {
-        &[
-            ("j/k", "move"),
-            ("/", "search"),
-            ("n/N", "match"),
-            ("@", "hunk"),
-            ("R", "refresh"),
-            ("O", "split"),
-            ("q", "back"),
-        ]
+    let has_comments = comment_count > 0;
+
+    let hints: Vec<(&str, &str)> = if is_editing {
+        vec![("C-s", "confirm"), ("Esc", "cancel")]
     } else {
-        &[
+        let mut h = vec![
             ("j/k", "move"),
             ("/", "search"),
-            ("n/N", "match"),
             ("@", "hunk"),
             ("R", "refresh"),
-            ("q", "back"),
-        ]
+            ("o", "comment"),
+        ];
+        if has_comments {
+            h.extend_from_slice(&[("c", "jump"), ("e", "edit"), ("!", "del"), ("S", "send")]);
+        }
+        if in_split_with_agent {
+            h.extend_from_slice(&[("O", "full"), ("C-w", "agent"), ("q", "back")]);
+        } else if is_full {
+            h.extend_from_slice(&[("O", "split"), ("q", "back")]);
+        } else {
+            h.push(("q", "back"));
+        }
+        h
     };
+    let hints: &[(&str, &str)] = &hints;
 
     let t = &app.theme;
     let styles = StatusBarStyle {
@@ -871,4 +907,58 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         hints: t.title_hints,
     };
     render_badge_status_bar(frame, area, " DIFF ", &styles, &location, hints);
+}
+
+fn render_send_review_dialog(frame: &mut Frame, area: Rect, prompt: &str, scroll_offset: usize) {
+    let dialog_width = 70.min(area.width.saturating_sub(4));
+    let dialog_height = (area.height * 4 / 5).max(10).min(area.height);
+    let Some(inner) = create_centered_dialog(
+        frame,
+        area,
+        " Send Review ",
+        dialog_width,
+        dialog_height,
+        Color::Yellow,
+    ) else {
+        return;
+    };
+
+    let content_height = inner.height.saturating_sub(2) as usize; // reserve 2 lines for footer
+    let prompt_lines: Vec<&str> = prompt.lines().collect();
+    let max_scroll = prompt_lines.len().saturating_sub(content_height);
+    let scroll = scroll_offset.min(max_scroll);
+
+    let inner_width = inner.width as usize;
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Render visible prompt lines
+    for line_text in prompt_lines.iter().skip(scroll).take(content_height) {
+        let truncated = truncate_to_width(line_text, inner_width);
+        lines.push(Line::from(Span::styled(
+            truncated,
+            Style::default().fg(Color::Indexed(252)),
+        )));
+    }
+
+    // Pad to fill content area
+    while lines.len() < content_height {
+        lines.push(Line::from(""));
+    }
+
+    // Footer separator + key hints
+    lines.push(Line::from(Span::styled(
+        "─".repeat(inner_width),
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("[y]", Style::default().fg(Color::Green)),
+        Span::raw(" send  "),
+        Span::styled("[j/k]", Style::default().fg(Color::DarkGray)),
+        Span::raw(" scroll  "),
+        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+        Span::raw(" cancel"),
+    ]));
+
+    let text = Paragraph::new(lines);
+    frame.render_widget(text, inner);
 }

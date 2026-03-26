@@ -68,6 +68,10 @@ pub enum Dialog {
     DiffSearch {
         input: String,
     },
+    ConfirmSendReview {
+        prompt: String,
+        scroll_offset: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -397,6 +401,10 @@ impl App {
                 self.handle_change_upstream_dialog(key, branches, selected)
             }
             Dialog::DiffSearch { input } => self.handle_diff_search_dialog(key, input),
+            Dialog::ConfirmSendReview {
+                prompt,
+                scroll_offset,
+            } => self.handle_confirm_send_review_dialog(key, prompt, scroll_offset),
         }
     }
 
@@ -736,6 +744,50 @@ impl App {
         Ok(())
     }
 
+    /// Handle key input during inline comment editing.
+    fn handle_comment_editing_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
+        match key.code {
+            // Ctrl+S = confirm (save)
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.commit_editing();
+                }
+            }
+            // Esc = cancel
+            KeyCode::Esc => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.cancel_editing();
+                }
+            }
+            // Enter = newline
+            KeyCode::Enter => {
+                if let Some(state) = self.diff_state_mut() {
+                    if let Some(editing) = &mut state.editing_comment {
+                        editing.text.push('\n');
+                    }
+                }
+            }
+            // Backspace = delete last char
+            KeyCode::Backspace => {
+                if let Some(state) = self.diff_state_mut() {
+                    if let Some(editing) = &mut state.editing_comment {
+                        editing.text.pop();
+                    }
+                }
+            }
+            // Char input
+            KeyCode::Char(c) => {
+                if let Some(state) = self.diff_state_mut() {
+                    if let Some(editing) = &mut state.editing_comment {
+                        editing.text.push(c);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn handle_tasks_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
         let Some(action) = self.key_bindings.tasks.lookup(&key) else {
             return Ok(());
@@ -970,6 +1022,13 @@ impl App {
     }
 
     fn handle_diff_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
+        // If editing a comment inline, intercept all keys
+        if let Some(state) = self.diff_state() {
+            if state.is_editing() {
+                return self.handle_comment_editing_key(key);
+            }
+        }
+
         let Some(action) = self.key_bindings.diff.lookup(&key) else {
             return Ok(());
         };
@@ -1032,6 +1091,47 @@ impl App {
                 if let Some(state) = self.diff_state_mut() {
                     state.page_down(page_height);
                     state.ensure_cursor_visible(page_height);
+                }
+            }
+            DiffAction::AddComment | DiffAction::EditComment => {
+                if let Some(state) = self.diff_state_mut() {
+                    if let Some(line) = state.lines.get(state.cursor) {
+                        match line.kind {
+                            crate::diff::DiffLineKind::Added
+                            | crate::diff::DiffLineKind::Removed
+                            | crate::diff::DiffLineKind::Context => {
+                                state.start_editing();
+                            }
+                            _ => {
+                                self.last_error =
+                                    Some("Cannot comment on header lines".to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            DiffAction::DeleteComment => {
+                if let Some(state) = self.diff_state_mut() {
+                    let cursor = state.cursor;
+                    if state.has_comment(cursor) {
+                        state.remove_comment(cursor);
+                    } else {
+                        self.last_error = Some("No comment on this line".to_string());
+                    }
+                }
+            }
+            DiffAction::SendReview => {
+                self.open_send_review_dialog();
+            }
+            DiffAction::NextComment => {
+                if let Some(state) = self.diff_state_mut() {
+                    if state.comment_count() == 0 {
+                        self.last_error = Some("No comments".to_string());
+                    } else {
+                        state.search_mode = Some(crate::diff::SearchMode::Comments);
+                        state.search_next();
+                        state.ensure_cursor_visible(page_height);
+                    }
                 }
             }
         }
@@ -1110,6 +1210,129 @@ impl App {
                 .send(crate::event::AppEvent::TaskResumed { id, result })
                 .await;
         });
+    }
+
+    /// Open the send review confirmation dialog with prompt preview.
+    fn open_send_review_dialog(&mut self) {
+        let Some(state) = self.diff_state() else {
+            self.last_error = Some("No diff view open".to_string());
+            return;
+        };
+        if state.comments.is_empty() {
+            self.last_error = Some("No review comments to send".to_string());
+            return;
+        }
+
+        // Check task is available and running before showing dialog
+        let task_id = self.focused_task_id();
+        let task = if let Some(id) = task_id {
+            self.tasks.iter().find(|t| t.id == id)
+        } else {
+            self.tasks.get(self.selected_index)
+        };
+        match task {
+            None => {
+                self.last_error = Some("No task available".to_string());
+                return;
+            }
+            Some(t) if !t.is_running() => {
+                self.last_error = Some("Task is not running — start the agent first".to_string());
+                return;
+            }
+            _ => {}
+        }
+
+        let prompt = state.format_review_prompt();
+        self.dialog = Some(Dialog::ConfirmSendReview {
+            prompt,
+            scroll_offset: 0,
+        });
+    }
+
+    fn handle_confirm_send_review_dialog(
+        &mut self,
+        key: KeyEvent,
+        prompt: String,
+        mut scroll_offset: usize,
+    ) -> anyhow::Result<()> {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.send_review_to_agent(prompt);
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                let max_scroll = prompt.lines().count();
+                scroll_offset = (scroll_offset + 1).min(max_scroll);
+                self.dialog = Some(Dialog::ConfirmSendReview {
+                    prompt,
+                    scroll_offset,
+                });
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                scroll_offset = scroll_offset.saturating_sub(1);
+                self.dialog = Some(Dialog::ConfirmSendReview {
+                    prompt,
+                    scroll_offset,
+                });
+            }
+            KeyCode::Esc => {}
+            _ => {
+                self.dialog = Some(Dialog::ConfirmSendReview {
+                    prompt,
+                    scroll_offset,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Send all review comments to the agent's PTY as a formatted prompt.
+    /// Uses bracketed paste mode; does NOT send Enter so the user can review first.
+    fn send_review_to_agent(&mut self, prompt: String) {
+        // Find the task to send to
+        let task_id = self.focused_task_id();
+        let task = if let Some(id) = task_id {
+            self.tasks.iter_mut().find(|t| t.id == id)
+        } else {
+            self.tasks.get_mut(self.selected_index)
+        };
+
+        let Some(task) = task else {
+            self.last_error = Some("No task available".to_string());
+            return;
+        };
+
+        if !task.is_running() {
+            self.last_error = Some("Task is not running — start the agent first".to_string());
+            return;
+        }
+
+        // Send via bracketed paste (no Enter — user submits manually)
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"\x1b[200~");
+        payload.extend_from_slice(prompt.as_bytes());
+        payload.extend_from_slice(b"\x1b[201~");
+        if let Err(e) = task.write_input(&payload) {
+            self.last_error = Some(format!("Failed to send review: {e}"));
+            return;
+        }
+
+        // Clear comments after sending
+        if let Some(state) = self.diff_state_mut() {
+            state.comments.clear();
+        }
+
+        // Open/focus agent view
+        let agent_task_id = self
+            .focused_task_id()
+            .or_else(|| self.tasks.get(self.selected_index).map(|t| t.id));
+        if let Some(id) = agent_task_id {
+            if !self.has_view(View::Agent) {
+                self.push_agent(id);
+                self.fullscreen = None;
+                self.sync_pty_size();
+            }
+            self.focus = self.pane_of(View::Agent);
+        }
     }
 
     // -- State transition helpers --

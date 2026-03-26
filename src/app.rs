@@ -4,7 +4,7 @@ use crate::{
     config::Config,
     diff::DiffState,
     event::{AppEvent, TaskId},
-    keybind::{AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
+    keybind::{self, AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
     task::{SpawnParams, Task},
     theme::Theme,
 };
@@ -71,6 +71,9 @@ pub enum Dialog {
     ConfirmSendReview {
         prompt: String,
         scroll_offset: usize,
+    },
+    Help {
+        entries: Vec<(String, &'static str)>,
     },
 }
 
@@ -334,6 +337,16 @@ impl App {
         if self.dialog.is_some() {
             return self.handle_dialog_key(key);
         }
+        // Help shortcut – works from any view
+        if key.code == KeyCode::Char('?') {
+            let entries = match self.focused_view() {
+                View::Tasks => keybind::tasks_help_entries(&self.key_bindings.tasks),
+                View::Agent => keybind::agent_help_entries(&self.key_bindings.agent),
+                View::Diff => keybind::diff_help_entries(&self.key_bindings.diff),
+            };
+            self.dialog = Some(Dialog::Help { entries });
+            return Ok(());
+        }
         // Global bindings
         if let Some(action) = self.key_bindings.global.lookup(&key) {
             match action {
@@ -399,6 +412,10 @@ impl App {
             Dialog::ConfirmMerge => self.handle_confirm_merge_dialog(key),
             Dialog::ChangeUpstream { branches, selected } => {
                 self.handle_change_upstream_dialog(key, branches, selected)
+            }
+            Dialog::Help { .. } => {
+                // Any key closes the help dialog
+                Ok(())
             }
             Dialog::DiffSearch { input } => self.handle_diff_search_dialog(key, input),
             Dialog::ConfirmSendReview {

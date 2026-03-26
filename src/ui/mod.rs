@@ -66,13 +66,18 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
     }
 
-    // Render send review dialog as a full-screen overlay (works from any view)
-    if let Some(Dialog::ConfirmSendReview {
-        prompt,
-        scroll_offset,
-    }) = &app.dialog
-    {
-        render_send_review_dialog(frame, area, prompt, *scroll_offset);
+    // Render full-screen overlay dialogs (works from any view)
+    match &app.dialog {
+        Some(Dialog::ConfirmSendReview {
+            prompt,
+            scroll_offset,
+        }) => {
+            render_send_review_dialog(frame, area, prompt, *scroll_offset);
+        }
+        Some(Dialog::Help { entries }) => {
+            render_help_dialog(frame, area, entries);
+        }
+        _ => {}
     }
 }
 
@@ -138,14 +143,7 @@ fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
-    let hints: &[(&str, &str)] = &[
-        ("j/k", "select"),
-        ("Enter", "diff"),
-        ("a", "agent"),
-        ("C-a", "fresh"),
-        ("C-w", "focus"),
-        ("q", "back"),
-    ];
+    let hints: &[(&str, &str)] = &[("?", "help"), ("C-w", "focus"), ("q", "back")];
     render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
 
     // Right pane: agent
@@ -193,13 +191,7 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
-    let hints: &[(&str, &str)] = &[
-        ("j/k", "select"),
-        ("a", "agent"),
-        ("C-a", "fresh"),
-        ("C-w", "diff"),
-        ("q", "back"),
-    ];
+    let hints: &[(&str, &str)] = &[("?", "help"), ("C-w", "diff"), ("q", "back")];
     render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
 
     // Right pane: diff view
@@ -293,7 +285,10 @@ fn render_dialog_overlay(frame: &mut Frame, area: Rect, app: &App) {
         Some(Dialog::ChangeUpstream { branches, selected }) => {
             render_change_upstream_dialog(frame, area, app, branches, *selected);
         }
-        Some(Dialog::ConfirmSendReview { .. }) | Some(Dialog::DiffSearch { .. }) | None => {}
+        Some(Dialog::ConfirmSendReview { .. })
+        | Some(Dialog::DiffSearch { .. })
+        | Some(Dialog::Help { .. })
+        | None => {}
     }
 }
 
@@ -343,19 +338,7 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         Some(Dialog::ChangeUpstream { .. }) => {
             &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]
         }
-        _ => &[
-            ("n", "new"),
-            ("Ctrl-k", "kill"),
-            ("M", "merge"),
-            ("S", "sync"),
-            ("U", "upstream"),
-            ("!", "delete"),
-            ("R", "refresh"),
-            ("Enter", "diff"),
-            ("a", "agent"),
-            ("C-a", "fresh"),
-            ("q", "quit"),
-        ],
+        _ => &[("?", "help"), ("q", "quit")],
     };
 
     let t = &app.theme;
@@ -400,14 +383,9 @@ fn render_agent_status_bar(
     }
 
     let hints: &[(&str, &str)] = if full {
-        &[("Ctrl-b/f", "scroll"), ("C-o", "split"), ("C-q", "back")]
+        &[("?", "help"), ("C-q", "back")]
     } else {
-        &[
-            ("Ctrl-b/f", "scroll"),
-            ("C-w", "left"),
-            ("C-o", "full"),
-            ("C-q", "back"),
-        ]
+        &[("?", "help"), ("C-w", "left"), ("C-q", "back")]
     };
 
     let t = &app.theme;
@@ -862,30 +840,15 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         String::new()
     };
 
-    let is_full = app.fullscreen == Some(View::Diff);
     let in_split_with_agent = app.has_view(View::Agent);
-    let has_comments = comment_count > 0;
-
     let hints: Vec<(&str, &str)> = if is_editing {
         vec![("C-s", "confirm"), ("Esc", "cancel")]
     } else {
-        let mut h = vec![
-            ("j/k", "move"),
-            ("/", "search"),
-            ("@", "hunk"),
-            ("R", "refresh"),
-            ("o", "comment"),
-        ];
-        if has_comments {
-            h.extend_from_slice(&[("c", "jump"), ("e", "edit"), ("!", "del"), ("S", "send")]);
-        }
+        let mut h = vec![("?", "help")];
         if in_split_with_agent {
-            h.extend_from_slice(&[("O", "full"), ("C-w", "agent"), ("q", "back")]);
-        } else if is_full {
-            h.extend_from_slice(&[("O", "split"), ("q", "back")]);
-        } else {
-            h.push(("q", "back"));
+            h.push(("C-w", "agent"));
         }
+        h.push(("q", "back"));
         h
     };
     let hints: &[(&str, &str)] = &hints;
@@ -905,6 +868,50 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         hints: t.title_hints,
     };
     render_badge_status_bar(frame, area, " DIFF ", &styles, &location, hints, focused);
+}
+
+fn render_help_dialog(frame: &mut Frame, area: Rect, entries: &[(String, &str)]) {
+    if entries.is_empty() {
+        return;
+    }
+
+    let key_col_width = entries.iter().map(|(k, _)| k.width()).max().unwrap_or(0);
+
+    let content_width = entries
+        .iter()
+        .map(|(k, d)| k.width() + 3 + d.width()) // key + "   " + desc
+        .max()
+        .unwrap_or(20);
+    let dialog_width = (content_width as u16 + 4).min(area.width.saturating_sub(4)); // +4 for border+padding
+    let dialog_height = (entries.len() as u16 + 2).min(area.height); // +2 for border
+
+    let Some(inner) = create_centered_dialog(
+        frame,
+        area,
+        " Key Bindings ",
+        dialog_width,
+        dialog_height,
+        Color::Cyan,
+    ) else {
+        return;
+    };
+
+    let lines: Vec<Line> = entries
+        .iter()
+        .map(|(key, desc)| {
+            let padded_key = format!(" {key}");
+            let pad = key_col_width + 1 - key.width(); // +1 for leading space
+            Line::from(vec![
+                Span::styled(
+                    format!("{padded_key}{}", " ".repeat(pad)),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(format!("   {desc}")),
+            ])
+        })
+        .collect();
+
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_send_review_dialog(frame: &mut Frame, area: Rect, prompt: &str, scroll_offset: usize) {

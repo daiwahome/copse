@@ -99,6 +99,41 @@ impl KeyBind {
         }
     }
 
+    /// Format a `KeyBind` back into a human-readable string (inverse of `parse`).
+    pub fn display(&self) -> String {
+        let base = match self.code {
+            KeyCode::Char(c) => {
+                if self.modifiers.contains(KeyModifiers::CONTROL) {
+                    return format!("Ctrl-{c}");
+                }
+                if c == ' ' {
+                    return "Space".to_string();
+                }
+                c.to_string()
+            }
+            KeyCode::Enter => "Enter".to_string(),
+            KeyCode::Esc => "Esc".to_string(),
+            KeyCode::Up => "Up".to_string(),
+            KeyCode::Down => "Down".to_string(),
+            KeyCode::Left => "Left".to_string(),
+            KeyCode::Right => "Right".to_string(),
+            KeyCode::Tab => "Tab".to_string(),
+            KeyCode::Backspace => "Backspace".to_string(),
+            KeyCode::Delete => "Delete".to_string(),
+            KeyCode::PageUp => "PageUp".to_string(),
+            KeyCode::PageDown => "PageDown".to_string(),
+            KeyCode::Home => "Home".to_string(),
+            KeyCode::End => "End".to_string(),
+            KeyCode::F(n) => format!("F{n}"),
+            _ => "<unknown>".to_string(),
+        };
+        if self.modifiers.contains(KeyModifiers::SHIFT) {
+            format!("Shift-{base}")
+        } else {
+            base
+        }
+    }
+
     /// Parse a human-readable key string into a `KeyBind`.
     ///
     /// Accepted formats:
@@ -214,73 +249,74 @@ pub struct KeyBindings {
     pub agent: ViewBindings<AgentAction>,
 }
 
-/// Action descriptor: name + default keys. Used for defaults and `--init`.
+/// Action descriptor: name + default keys + display name. Used for defaults, `--init`, and help dialog.
 struct ActionDef<A: Copy> {
     name: &'static str,
     action: A,
     default_keys: &'static [&'static str],
+    display_name: &'static str,
 }
 
 // Macro to reduce boilerplate for action definition lists
 macro_rules! action_defs {
-    ($( $name:expr => $action:expr, [ $($key:expr),* $(,)? ] );* $(;)?) => {
-        &[ $( ActionDef { name: $name, action: $action, default_keys: &[$($key),*] } ),* ]
+    ($( $name:expr, $display:expr => $action:expr, [ $($key:expr),* $(,)? ] );* $(;)?) => {
+        &[ $( ActionDef { name: $name, action: $action, default_keys: &[$($key),*], display_name: $display } ),* ]
     };
 }
 
 fn tasks_action_defs() -> &'static [ActionDef<TasksAction>] {
     action_defs! {
-        "new-task" => TasksAction::NewTask, ["n"];
-        "move-down" => TasksAction::MoveDown, ["j", "Down"];
-        "move-up" => TasksAction::MoveUp, ["k", "Up"];
-        "open" => TasksAction::OpenTask, ["a"];
-        "show-diff" => TasksAction::ShowDiff, ["d", "Enter"];
-        "merge" => TasksAction::Merge, ["M"];
-        "sync" => TasksAction::Sync, ["S"];
-        "change-upstream" => TasksAction::ChangeUpstream, ["U"];
-        "delete" => TasksAction::Delete, ["!"];
-        "refresh" => TasksAction::Refresh, ["R"];
-        "fullscreen" => TasksAction::Fullscreen, ["O", "Ctrl-O"];
-        "quit" => TasksAction::Quit, ["q", "Q"];
-        "kill" => TasksAction::Kill, ["Ctrl-K"];
-        "close-children" => TasksAction::CloseChildren, ["Ctrl-Q"];
-        "start-fresh" => TasksAction::StartFresh, ["Ctrl-A"];
+        "new-task", "Create new task" => TasksAction::NewTask, ["n"];
+        "move-down", "Move down" => TasksAction::MoveDown, ["j", "Down"];
+        "move-up", "Move up" => TasksAction::MoveUp, ["k", "Up"];
+        "open", "Open agent view" => TasksAction::OpenTask, ["a"];
+        "show-diff", "Open diff view" => TasksAction::ShowDiff, ["d", "Enter"];
+        "merge", "Merge to upstream" => TasksAction::Merge, ["M"];
+        "sync", "Sync from upstream" => TasksAction::Sync, ["S"];
+        "change-upstream", "Change upstream" => TasksAction::ChangeUpstream, ["U"];
+        "delete", "Delete task" => TasksAction::Delete, ["!"];
+        "refresh", "Refresh status" => TasksAction::Refresh, ["R"];
+        "fullscreen", "Toggle fullscreen" => TasksAction::Fullscreen, ["O", "Ctrl-O"];
+        "quit", "Quit / Back" => TasksAction::Quit, ["q", "Q"];
+        "kill", "Kill running task" => TasksAction::Kill, ["Ctrl-K"];
+        "close-children", "Close child views" => TasksAction::CloseChildren, ["Ctrl-Q"];
+        "start-fresh", "Start fresh agent" => TasksAction::StartFresh, ["Ctrl-A"];
     }
 }
 
 fn diff_action_defs() -> &'static [ActionDef<DiffAction>] {
     action_defs! {
-        "move-down" => DiffAction::MoveDown, ["j", "Down"];
-        "move-up" => DiffAction::MoveUp, ["k", "Up"];
-        "next-hunk" => DiffAction::NextHunk, ["@"];
-        "search" => DiffAction::Search, ["/"];
-        "search-next" => DiffAction::SearchNext, ["n"];
-        "search-prev" => DiffAction::SearchPrev, ["N"];
-        "refresh" => DiffAction::Refresh, ["R"];
-        "fullscreen" => DiffAction::Fullscreen, ["O", "Ctrl-O"];
-        "close" => DiffAction::Close, ["q", "Esc", "Ctrl-Q"];
-        "page-up" => DiffAction::PageUp, ["Ctrl-B"];
-        "page-down" => DiffAction::PageDown, ["Ctrl-F"];
-        "add-comment" => DiffAction::AddComment, ["o"];
-        "edit-comment" => DiffAction::EditComment, ["e"];
-        "delete-comment" => DiffAction::DeleteComment, ["!"];
-        "send-review" => DiffAction::SendReview, ["S"];
-        "next-comment" => DiffAction::NextComment, ["c"];
+        "move-down", "Move down" => DiffAction::MoveDown, ["j", "Down"];
+        "move-up", "Move up" => DiffAction::MoveUp, ["k", "Up"];
+        "next-hunk", "Jump to next hunk" => DiffAction::NextHunk, ["@"];
+        "search", "Search" => DiffAction::Search, ["/"];
+        "search-next", "Next match" => DiffAction::SearchNext, ["n"];
+        "search-prev", "Previous match" => DiffAction::SearchPrev, ["N"];
+        "refresh", "Refresh diff" => DiffAction::Refresh, ["R"];
+        "fullscreen", "Toggle fullscreen" => DiffAction::Fullscreen, ["O", "Ctrl-O"];
+        "close", "Close diff view" => DiffAction::Close, ["q", "Esc", "Ctrl-Q"];
+        "page-up", "Page up" => DiffAction::PageUp, ["Ctrl-B"];
+        "page-down", "Page down" => DiffAction::PageDown, ["Ctrl-F"];
+        "add-comment", "Add comment" => DiffAction::AddComment, ["o"];
+        "edit-comment", "Edit comment" => DiffAction::EditComment, ["e"];
+        "delete-comment", "Delete comment" => DiffAction::DeleteComment, ["!"];
+        "send-review", "Send review" => DiffAction::SendReview, ["S"];
+        "next-comment", "Jump to next comment" => DiffAction::NextComment, ["c"];
     }
 }
 
 fn agent_action_defs() -> &'static [ActionDef<AgentAction>] {
     action_defs! {
-        "fullscreen" => AgentAction::Fullscreen, ["Ctrl-O"];
-        "close" => AgentAction::Close, ["Ctrl-Q"];
-        "page-up" => AgentAction::PageUp, ["Ctrl-B"];
-        "page-down" => AgentAction::PageDown, ["Ctrl-F"];
+        "fullscreen", "Toggle fullscreen" => AgentAction::Fullscreen, ["Ctrl-O"];
+        "close", "Close agent view" => AgentAction::Close, ["Ctrl-Q"];
+        "page-up", "Scroll up" => AgentAction::PageUp, ["Ctrl-B"];
+        "page-down", "Scroll down" => AgentAction::PageDown, ["Ctrl-F"];
     }
 }
 
 fn global_action_defs() -> &'static [ActionDef<GlobalAction>] {
     action_defs! {
-        "focus-toggle" => GlobalAction::FocusToggle, ["Ctrl-W"];
+        "focus-toggle", "Toggle focus" => GlobalAction::FocusToggle, ["Ctrl-W"];
     }
 }
 
@@ -434,6 +470,45 @@ pub fn default_keys_toml() -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Help entries – derive dialog content from actual bindings
+// ---------------------------------------------------------------------------
+
+/// Build help entries for a view by reverse-looking-up keys from the bindings map.
+/// Returns `(keys_display, display_name)` pairs in the order of `defs`.
+fn build_help_entries<A: Copy + Eq + std::hash::Hash>(
+    bindings: &ViewBindings<A>,
+    defs: &[ActionDef<A>],
+) -> Vec<(String, &'static str)> {
+    defs.iter()
+        .filter_map(|def| {
+            let mut keys: Vec<String> = bindings
+                .map
+                .iter()
+                .filter(|(_, a)| **a == def.action)
+                .map(|(kb, _)| kb.display())
+                .collect();
+            if keys.is_empty() {
+                return None;
+            }
+            keys.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+            Some((keys.join("/"), def.display_name))
+        })
+        .collect()
+}
+
+pub fn tasks_help_entries(bindings: &ViewBindings<TasksAction>) -> Vec<(String, &'static str)> {
+    build_help_entries(bindings, tasks_action_defs())
+}
+
+pub fn agent_help_entries(bindings: &ViewBindings<AgentAction>) -> Vec<(String, &'static str)> {
+    build_help_entries(bindings, agent_action_defs())
+}
+
+pub fn diff_help_entries(bindings: &ViewBindings<DiffAction>) -> Vec<(String, &'static str)> {
+    build_help_entries(bindings, diff_action_defs())
+}
+
+// ---------------------------------------------------------------------------
 // RawKeyBindings – serde intermediate
 // ---------------------------------------------------------------------------
 
@@ -527,5 +602,45 @@ mod tests {
             warnings.iter().any(|w| w.contains("Duplicate key")),
             "Expected duplicate key warning, got: {warnings:?}"
         );
+    }
+
+    #[test]
+    fn display_parse_round_trip() {
+        let cases = [
+            "j",
+            "O",
+            "!",
+            "/",
+            "@",
+            "Ctrl-o",
+            "Ctrl-w",
+            "Enter",
+            "Esc",
+            "Up",
+            "Down",
+            "Tab",
+            "Backspace",
+            "Delete",
+            "PageUp",
+            "PageDown",
+            "Home",
+            "End",
+            "Space",
+            "F1",
+            "F5",
+            "F12",
+            "Shift-Enter",
+        ];
+        for input in cases {
+            let kb = KeyBind::parse(input).unwrap_or_else(|e| panic!("parse({input:?}): {e}"));
+            let displayed = kb.display();
+            let kb2 = KeyBind::parse(&displayed)
+                .unwrap_or_else(|e| panic!("re-parse({displayed:?}) from {input:?}: {e}"));
+            assert_eq!(
+                kb, kb2,
+                "round-trip failed: {input:?} -> display {displayed:?} -> parse {:?} (expected {:?})",
+                kb2, kb
+            );
+        }
     }
 }

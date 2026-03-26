@@ -1,0 +1,30 @@
+name: Auto Tag
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'bump/')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Create and push tag
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          VERSION="${HEAD_REF#bump/}"
+          TAG="v${VERSION}"
+
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "::warning::Tag $TAG already exists. Skipping."
+            exit 0
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"

@@ -28,6 +28,7 @@ pub struct SpawnParams {
 pub enum TaskStatus {
     Running,
     Stopped,
+    Deleting,
 }
 
 pub struct Task {

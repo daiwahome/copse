@@ -16,6 +16,8 @@ pub struct Config {
     pub auto_commit: bool,
     pub auto_permissions: bool,
     pub permission_mode: String,
+    #[serde(default = "default_diff_filter")]
+    pub diff_filter: String,
     #[serde(default)]
     pub color: ColorConfig,
     #[serde(default)]
@@ -28,6 +30,7 @@ impl Default for Config {
             auto_commit: false,
             auto_permissions: false,
             permission_mode: "default".to_string(),
+            diff_filter: default_diff_filter(),
             color: ColorConfig::default(),
             keys: RawKeyBindings::default(),
         }
@@ -74,6 +77,7 @@ impl Config {
         out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
         out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
         out.push_str(&format!("permission_mode = \"{}\"\n", self.permission_mode));
+        out.push_str(&format!("diff_filter = \"{}\"\n", self.diff_filter));
         out.push_str("\n[color]\n");
 
         let entries: &[(&str, &ColorEntry)] = &[
@@ -221,6 +225,10 @@ impl Default for ColorConfig {
 }
 
 // Default value functions for serde
+fn default_diff_filter() -> String {
+    "auto".to_string()
+}
+
 fn default_cursor() -> ColorEntry {
     ColorEntry::new().bg("236")
 }

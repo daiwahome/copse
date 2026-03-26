@@ -786,11 +786,19 @@ impl App {
                             self.last_error = Some("No commits ahead of upstream".to_string());
                         } else {
                             let upstream = task.upstream.as_ref().unwrap();
-                            match DiffState::from_task(&self.repo_root, &task.name, upstream) {
-                                Ok(state) => {
+                            match DiffState::from_task(
+                                &self.repo_root,
+                                &task.name,
+                                upstream,
+                                &self.config.diff_filter,
+                            ) {
+                                Ok((state, warning)) => {
                                     self.push_diff(state);
                                     self.fullscreen = None;
                                     self.focus = self.pane_of(View::Diff);
+                                    if let Some(w) = warning {
+                                        self.last_error = Some(w);
+                                    }
                                 }
                                 Err(e) => {
                                     self.last_error = Some(format!("Failed to get diff: {e}"));
@@ -1039,9 +1047,17 @@ impl App {
                 self.close_diff();
             } else {
                 let upstream = task.upstream.as_ref().unwrap();
-                match DiffState::from_task(&self.repo_root, &task.name, upstream) {
-                    Ok(state) => {
+                match DiffState::from_task(
+                    &self.repo_root,
+                    &task.name,
+                    upstream,
+                    &self.config.diff_filter,
+                ) {
+                    Ok((state, warning)) => {
                         self.update_diff(state);
+                        if let Some(w) = warning {
+                            self.last_error = Some(w);
+                        }
                     }
                     Err(e) => {
                         self.last_error = Some(format!("Failed to get diff: {e}"));

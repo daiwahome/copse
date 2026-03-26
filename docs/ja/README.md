@@ -25,6 +25,10 @@ TODO
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - git リポジトリ内で実行する必要がある
 
+### オプション
+
+- [delta](https://github.com/dandavison/delta) — インストールされている場合、diff view で delta によるシンタックスハイライトと単語レベルの差分強調が有効になる。delta がない場合は tig 風のシンプルな配色で表示される。
+
 ### 推奨ターミナル
 
 copse はキー入力の正確な処理のために [Kitty キーボードプロトコル](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)を使用している。以下のターミナルを推奨:
@@ -82,7 +86,7 @@ copse/src
  ├── app.rs       アプリケーション状態 (タスク、モード、キー処理)
  ├── task.rs      git worktree 管理、PTY で `claude` を起動
  │                PTY 出力 → vt100 パーサー → スクリーンバッファ
- ├── diff.rs      Unified diff パーサーと検索
+ ├── diff.rs      Unified diff パーサー、検索、delta 連携
  ├── config.rs    設定管理 (confy, ~/.config/copse/)
  ├── event.rs     AppEvent enum (キー、タスクライフサイクル、リサイズ)
  ├── templates/

@@ -25,6 +25,10 @@ TODO
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 - A git repository (copse must be run from within one)
 
+### Optional
+
+- [delta](https://github.com/dandavison/delta) — When installed, the diff view uses delta for syntax highlighting and word-level emphasis. Without delta, diffs are shown with plain tig-style coloring.
+
 ### Recommended Terminals
 
 copse uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for accurate key handling. The following terminals are recommended:
@@ -82,7 +86,7 @@ copse/src
  ├── app.rs       Application state (tasks, mode, key handling)
  ├── task.rs      Manages git worktrees, spawns `claude` in a PTY
  │                Reads PTY output → vt100 parser → screen buffer
- ├── diff.rs      Unified diff parser and search
+ ├── diff.rs      Unified diff parser, search, and delta integration
  ├── config.rs    Configuration (confy, ~/.config/copse/)
  ├── event.rs     AppEvent enum (key, task lifecycle, resize)
  ├── templates/

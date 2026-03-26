@@ -19,6 +19,7 @@ If the file already exists, the command exits with an error to prevent overwriti
 auto_commit = false
 auto_permissions = false
 permission_mode = "default"
+diff_filter = "auto"
 
 [color]
 cursor = { bg = "236" }
@@ -81,11 +82,12 @@ page-down = ["Ctrl-F"]
 
 ## Options
 
-| Option             | Type   | Default     | Description                                    |
-| ------------------ | ------ | ----------- | ---------------------------------------------- |
-| `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response |
-| `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code      |
-| `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks      |
+| Option             | Type   | Default     | Description                                      |
+| ------------------ | ------ | ----------- | ------------------------------------------------ |
+| `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response   |
+| `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code        |
+| `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks        |
+| `diff_filter`      | string | `"auto"`    | Diff colorizer: `"auto"`, `"delta"`, or `"none"` |
 
 ### Permission Mode
 
@@ -101,6 +103,18 @@ When set, copse passes `--permission-mode <mode>` to every `claude` invocation. 
 | `dontAsk`           | Skip disallowed operations silently      |
 
 The mode can be changed during a session within Claude Code (e.g. via `/permissions`).
+
+### Diff Filter
+
+Controls how diffs are colorized in the diff view.
+
+| Value   | Description                                                                     |
+| ------- | ------------------------------------------------------------------------------- |
+| `auto`  | Use [delta](https://github.com/dandavison/delta) if installed, otherwise `none` |
+| `delta` | Always use delta (falls back to `none` if not installed)                        |
+| `none`  | No external filter — plain tig-style coloring (green/red foreground)            |
+
+When delta is used, diffs get syntax highlighting, colored backgrounds, and word-level emphasis.
 
 ## Color Theme
 

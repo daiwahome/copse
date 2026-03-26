@@ -1,4 +1,10 @@
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
+
+use ansi_to_tui::IntoText;
+use ratatui::text::Line;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffLineKind {
@@ -9,10 +15,22 @@ pub enum DiffLineKind {
     FileHeader,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DiffLine {
     pub kind: DiffLineKind,
     pub content: String,
+    /// ANSI-colored line from delta (None = no delta available)
+    pub ansi_line: Option<Line<'static>>,
+}
+
+impl std::fmt::Debug for DiffLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiffLine")
+            .field("kind", &self.kind)
+            .field("content", &self.content)
+            .field("ansi_line", &self.ansi_line.as_ref().map(|_| "..."))
+            .finish()
+    }
 }
 
 pub struct DiffState {
@@ -26,16 +44,70 @@ pub struct DiffState {
 
 impl DiffState {
     /// Run `git diff <upstream>..<branch>` and parse the output.
-    pub fn from_task(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<Self> {
+    /// Returns `(DiffState, Option<warning_message>)`.
+    pub fn from_task(
+        repo_root: &Path,
+        name: &str,
+        upstream: &str,
+        diff_filter: &str,
+    ) -> anyhow::Result<(Self, Option<String>)> {
         let raw = get_diff(repo_root, name, upstream)?;
-        Ok(Self::parse(&raw, name.to_string()))
+        let (colored, warning) = match diff_filter {
+            "none" => (None, None),
+            "auto" => (colorize_with_delta(&raw), None),
+            "delta" => {
+                let colored = colorize_with_delta(&raw);
+                let warning = if colored.is_none() {
+                    Some("diff_filter = \"delta\" but delta is not installed".to_string())
+                } else {
+                    None
+                };
+                (colored, warning)
+            }
+            other => (
+                None,
+                Some(format!(
+                    "Unknown diff_filter value: \"{other}\", using none"
+                )),
+            ),
+        };
+        Ok((
+            Self::parse(&raw, name.to_string(), colored.as_deref()),
+            warning,
+        ))
     }
 
     /// Parse unified diff text into structured DiffState.
-    pub fn parse(raw_diff: &str, task_name: String) -> Self {
+    pub fn parse(raw_diff: &str, task_name: String, colored_diff: Option<&str>) -> Self {
         let mut lines = Vec::new();
 
+        // Convert colored lines into an iterator of ANSI-parsed Lines
+        let raw_line_count = raw_diff.lines().count();
+        let ansi_lines: Vec<Option<Line<'static>>> = match colored_diff {
+            Some(colored) => {
+                let parsed: Vec<_> = colored
+                    .lines()
+                    .map(|l| {
+                        l.as_bytes()
+                            .into_text()
+                            .ok()
+                            .and_then(|t| t.lines.into_iter().next())
+                    })
+                    .collect();
+                if parsed.len() != raw_line_count {
+                    // Line count mismatch — discard delta output entirely
+                    Vec::new()
+                } else {
+                    parsed
+                }
+            }
+            None => Vec::new(),
+        };
+        let mut ansi_iter = ansi_lines.into_iter();
+
         for raw_line in raw_diff.lines() {
+            let ansi_line = ansi_iter.next().flatten();
+
             if raw_line.starts_with("diff --git ")
                 || raw_line.starts_with("---")
                 || raw_line.starts_with("+++")
@@ -44,31 +116,37 @@ impl DiffState {
                 lines.push(DiffLine {
                     kind: DiffLineKind::FileHeader,
                     content: raw_line.to_string(),
+                    ansi_line,
                 });
             } else if raw_line.starts_with("@@") {
                 lines.push(DiffLine {
                     kind: DiffLineKind::HunkHeader,
                     content: raw_line.to_string(),
+                    ansi_line,
                 });
             } else if let Some(rest) = raw_line.strip_prefix('+') {
                 lines.push(DiffLine {
                     kind: DiffLineKind::Added,
                     content: rest.to_string(),
+                    ansi_line,
                 });
             } else if let Some(rest) = raw_line.strip_prefix('-') {
                 lines.push(DiffLine {
                     kind: DiffLineKind::Removed,
                     content: rest.to_string(),
+                    ansi_line,
                 });
             } else if let Some(rest) = raw_line.strip_prefix(' ') {
                 lines.push(DiffLine {
                     kind: DiffLineKind::Context,
                     content: rest.to_string(),
+                    ansi_line,
                 });
             } else {
                 lines.push(DiffLine {
                     kind: DiffLineKind::FileHeader,
                     content: raw_line.to_string(),
+                    ansi_line,
                 });
             }
         }
@@ -186,6 +264,49 @@ fn line_matches(line: &DiffLine, needle: &str, anchored: bool) -> bool {
         display.starts_with(needle)
     } else {
         display.contains(needle)
+    }
+}
+
+/// Check if delta is available in PATH (cached after first call).
+fn is_delta_available() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        Command::new("delta")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    })
+}
+
+/// Run raw diff text through `delta --color-only` for syntax highlighting.
+/// Returns None if delta is not installed or fails.
+fn colorize_with_delta(raw_diff: &str) -> Option<String> {
+    if !is_delta_available() {
+        return None;
+    }
+
+    let mut child = Command::new("delta")
+        .args(["--no-gitconfig", "--color-only"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(raw_diff.as_bytes())
+        .ok()?;
+
+    let output = child.wait_with_output().ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        None
     }
 }
 

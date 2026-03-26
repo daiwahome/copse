@@ -14,7 +14,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let max_upstream_len = app
         .tasks
         .iter()
-        .map(|t| "(upstream: )".len() + t.upstream.len())
+        .map(|t| match &t.upstream {
+            Some(u) => "(upstream: )".len() + u.len(),
+            None => "(no upstream)".len(),
+        })
         .max()
         .unwrap_or(0);
     let max_status_len = 8; // "deleting" is the longest status text
@@ -45,7 +48,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
                 String::new()
             };
 
-            let upstream_str = format!("(upstream: {})", task.upstream);
+            let upstream_str = match &task.upstream {
+                Some(u) => format!("(upstream: {u})"),
+                None => "(no upstream)".to_string(),
+            };
             let upstream_color = if task.upstream_exists {
                 Color::DarkGray
             } else {

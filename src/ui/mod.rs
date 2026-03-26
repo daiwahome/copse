@@ -138,18 +138,14 @@ fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
-    let hints: &[(&str, &str)] = if focus == Pane::Left {
-        &[
-            ("j/k", "select"),
-            ("Enter", "diff"),
-            ("a", "agent"),
-            ("C-a", "fresh"),
-            ("C-w", "focus"),
-            ("q", "back"),
-        ]
-    } else {
-        &[("C-w", "focus")]
-    };
+    let hints: &[(&str, &str)] = &[
+        ("j/k", "select"),
+        ("Enter", "diff"),
+        ("a", "agent"),
+        ("C-a", "fresh"),
+        ("C-w", "focus"),
+        ("q", "back"),
+    ];
     render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
 
     // Right pane: agent
@@ -197,17 +193,13 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
-    let hints: &[(&str, &str)] = if focus == Pane::Left {
-        &[
-            ("j/k", "select"),
-            ("a", "agent"),
-            ("C-a", "fresh"),
-            ("C-w", "diff"),
-            ("q", "back"),
-        ]
-    } else {
-        &[("C-w", "focus")]
-    };
+    let hints: &[(&str, &str)] = &[
+        ("j/k", "select"),
+        ("a", "agent"),
+        ("C-a", "fresh"),
+        ("C-w", "diff"),
+        ("q", "back"),
+    ];
     render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
 
     // Right pane: diff view
@@ -332,7 +324,7 @@ fn render_split_tasks_status_bar(
         },
         hints: t.title_hints,
     };
-    render_badge_status_bar(frame, area, " TASKS ", &styles, &left, hints);
+    render_badge_status_bar(frame, area, " TASKS ", &styles, &left, hints, focused);
 }
 
 /// Status bar for the tasks view.
@@ -378,6 +370,7 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         },
         &left,
         hints,
+        true,
     );
 }
 
@@ -431,7 +424,7 @@ fn render_agent_status_bar(
         },
         hints: t.title_hints,
     };
-    render_badge_status_bar(frame, area, " AGENT ", &styles, &location, hints);
+    render_badge_status_bar(frame, area, " AGENT ", &styles, &location, hints, focused);
 }
 
 /// Create a centered dialog with border, clearing the background.
@@ -789,6 +782,7 @@ struct StatusBarStyle {
 }
 
 /// Generic status bar with badge, location text, and key hints.
+/// When `focused` is false, hints are replaced with just "C-w:focus".
 fn render_badge_status_bar(
     frame: &mut Frame,
     area: Rect,
@@ -796,8 +790,12 @@ fn render_badge_status_bar(
     styles: &StatusBarStyle,
     location: &str,
     hints: &[(&str, &str)],
+    focused: bool,
 ) {
     use ratatui::text::Text;
+
+    let unfocused_hints: &[(&str, &str)] = &[("C-w", "focus")];
+    let hints = if focused { hints } else { unfocused_hints };
 
     let right_str = {
         let s = hints
@@ -906,7 +904,7 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         },
         hints: t.title_hints,
     };
-    render_badge_status_bar(frame, area, " DIFF ", &styles, &location, hints);
+    render_badge_status_bar(frame, area, " DIFF ", &styles, &location, hints, focused);
 }
 
 fn render_send_review_dialog(frame: &mut Frame, area: Rect, prompt: &str, scroll_offset: usize) {

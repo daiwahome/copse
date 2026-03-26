@@ -745,6 +745,7 @@ fn format_task_info(app: &App) -> String {
                 }
             }
             crate::task::TaskStatus::Stopped => "stopped",
+            crate::task::TaskStatus::Deleting => "deleting",
         };
         format!(" {} - {}", task.name, st)
     } else {

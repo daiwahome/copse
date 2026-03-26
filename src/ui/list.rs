@@ -17,7 +17,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         .map(|t| "(upstream: )".len() + t.upstream.len())
         .max()
         .unwrap_or(0);
-    let max_status_len = 7; // "running", "waiting", "stopped" are all 7 chars
+    let max_status_len = 8; // "deleting" is the longest status text
 
     let items: Vec<ListItem> = app
         .tasks
@@ -32,6 +32,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
                     }
                 }
                 TaskStatus::Stopped => ("■ ", Color::DarkGray, "stopped"),
+                TaskStatus::Deleting => ("✕ ", Color::Red, "deleting"),
             };
 
             let ahead_text = if task.upstream_exists {

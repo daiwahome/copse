@@ -263,7 +263,9 @@ impl App {
             AppEvent::TaskExited(id) => {
                 // Mark as Stopped but keep the task in the list
                 if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
-                    task.status = crate::task::TaskStatus::Stopped;
+                    if task.status != crate::task::TaskStatus::Deleting {
+                        task.status = crate::task::TaskStatus::Stopped;
+                    }
                     task.waiting_for_input = false;
                     task.waiting_status_dirty = false;
                     task.commits_ahead =
@@ -294,6 +296,12 @@ impl App {
                     }
                 }
                 self.refresh_commits_ahead();
+            }
+            AppEvent::DeleteFailed(id, msg) => {
+                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+                    task.status = crate::task::TaskStatus::Stopped;
+                }
+                self.last_error = Some(msg);
             }
             AppEvent::GitOpResult(result) => match result {
                 Ok(()) => {
@@ -511,9 +519,10 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let repo_root = self.repo_root.clone();
                 let worktree_base_dir = self.worktree_base_dir.clone();
-                if let Some(task) = self.tasks.get(self.selected_index) {
+                if let Some(task) = self.tasks.get_mut(self.selected_index) {
                     let id = task.id;
                     let name = task.name.clone();
+                    task.status = crate::task::TaskStatus::Deleting;
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
@@ -526,14 +535,15 @@ impl App {
                             }
                             Ok(Err(e)) => {
                                 let _ = event_tx
-                                    .send(AppEvent::GitOpResult(Err(format!("Delete failed: {e}"))))
+                                    .send(AppEvent::DeleteFailed(id, format!("Delete failed: {e}")))
                                     .await;
                             }
                             Err(e) => {
                                 let _ = event_tx
-                                    .send(AppEvent::GitOpResult(Err(format!(
-                                        "Delete task error: {e}"
-                                    ))))
+                                    .send(AppEvent::DeleteFailed(
+                                        id,
+                                        format!("Delete task error: {e}"),
+                                    ))
                                     .await;
                             }
                         }
@@ -748,6 +758,7 @@ impl App {
                         crate::task::TaskStatus::Stopped => {
                             self.resume_task(self.selected_index, false);
                         }
+                        crate::task::TaskStatus::Deleting => {}
                     }
                 }
             }

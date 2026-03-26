@@ -23,6 +23,8 @@ pub enum AppEvent {
     },
     /// Task was deleted (worktree + branch removed); remove from list by ID
     TaskDeleted(TaskId),
+    /// Async delete operation failed; reset task status back to Stopped
+    DeleteFailed(TaskId, String),
     /// Result of an async git operation: Ok(()) to refresh, Err(msg) for error
     GitOpResult(Result<(), String>),
     /// Squash merge requested — needs alternate screen exit for $EDITOR

@@ -40,6 +40,7 @@ Each task shows:
 | `U`           | Change upstream branch (stopped only)           |
 | `!`           | Delete task (worktree + branch, stopped only)   |
 | `R`           | Refresh commits ahead                           |
+| `?`           | Show help dialog                                |
 | `q` / `Q`     | Quit copse                                      |
 
 ### Task Creation Flow
@@ -76,26 +77,27 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 
 ### Key Bindings (Diff pane)
 
-| Key       | Action                                              |
-| --------- | --------------------------------------------------- |
-| `j` / `↓` | Move cursor down                                    |
-| `k` / `↑` | Move cursor up                                      |
-| `Ctrl-b`  | Scroll up one page                                  |
-| `Ctrl-f`  | Scroll down one page                                |
-| `/`       | Search (enter pattern, `Enter` to search)           |
-| `n`       | Next search match                                   |
-| `N`       | Previous search match                               |
-| `@`       | Jump to next hunk (sets pattern to `^@@`)           |
-| `R`       | Refresh diff                                        |
-| `O`       | Toggle split ↔ fullscreen                           |
-| `q`       | Close diff view                                     |
-| `o`       | Add review comment on current line (inline editing) |
-| `e`       | Edit existing review comment                        |
-| `!`       | Delete review comment on current line               |
-| `c`       | Jump to next comment (then `n`/`N` to navigate)     |
-| `S`       | Send all comments to agent (opens preview dialog)   |
-| `Ctrl-s`  | Confirm comment (while editing)                     |
-| `Esc`     | Cancel comment editing                              |
+| Key       | Action                                                |
+| --------- | ----------------------------------------------------- |
+| `j` / `↓` | Move cursor down                                      |
+| `k` / `↑` | Move cursor up                                        |
+| `Ctrl-b`  | Scroll up one page                                    |
+| `Ctrl-f`  | Scroll down one page                                  |
+| `/`       | Open search dialog (enter pattern, `Enter` to search) |
+| `n`       | Next search match                                     |
+| `N`       | Previous search match                                 |
+| `@`       | Jump to next hunk (sets pattern to `^@@`)             |
+| `R`       | Refresh diff                                          |
+| `O`       | Toggle split ↔ fullscreen                             |
+| `q`       | Close diff view                                       |
+| `o`       | Add review comment on current line (inline editing)   |
+| `e`       | Edit existing review comment                          |
+| `!`       | Delete review comment on current line                 |
+| `c`       | Jump to next comment (then `n`/`N` to navigate)       |
+| `S`       | Send all comments to agent (opens preview dialog)     |
+| `Ctrl-s`  | Confirm comment (while editing)                       |
+| `Esc`     | Cancel comment editing                                |
+| `?`       | Show help dialog                                      |
 
 When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`). After pressing `c`, `n`/`N` navigate between commented lines instead.
 
@@ -141,6 +143,7 @@ When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left,
 | `Ctrl-w`  | Switch focus to left pane                        |              |
 | `Ctrl-b`  | Scroll up one page (scrollback)                  | cursor left  |
 | `Ctrl-f`  | Scroll down one page (scrollback)                | cursor right |
+| `?`       | Show help dialog                                 | forward `?`  |
 | Any other | Reset scroll position and forward to Claude Code |              |
 
 ### Key Bindings (Tasks pane, left focus)

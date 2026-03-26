@@ -112,6 +112,7 @@ fn render_single_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         diff::render(frame, chunks[0], state, true, &app.theme);
     }
     render_diff_status_bar(frame, chunks[1], app, true);
+    render_diff_overlay(frame, chunks[0], app);
 }
 
 /// Split view: [tasks | agent]
@@ -209,6 +210,7 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         );
     }
     render_diff_status_bar(frame, right_rows[1], app, focus == Pane::Right);
+    render_diff_overlay(frame, right_rows[0], app);
 }
 
 /// Split view: [diff | agent]
@@ -243,6 +245,7 @@ fn render_split_diff_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         diff::render(frame, left_rows[0], state, focus == Pane::Left, &app.theme);
     }
     render_diff_status_bar(frame, left_rows[1], app, focus == Pane::Left);
+    render_diff_overlay(frame, left_rows[0], app);
 
     // Right pane: agent
     let right_rows = Layout::default()
@@ -289,6 +292,13 @@ fn render_dialog_overlay(frame: &mut Frame, area: Rect, app: &App) {
         | Some(Dialog::DiffSearch { .. })
         | Some(Dialog::Help { .. })
         | None => {}
+    }
+}
+
+/// Render diff-specific dialog overlay (search).
+fn render_diff_overlay(frame: &mut Frame, area: Rect, app: &App) {
+    if let Some(Dialog::DiffSearch { input, .. }) = &app.dialog {
+        render_diff_search_dialog(frame, area, input);
     }
 }
 
@@ -452,6 +462,21 @@ fn render_new_task_dialog(frame: &mut Frame, area: Rect, input: &str) {
             Span::styled("█", Style::default().fg(Color::Yellow)),
         ]),
     ])
+    .alignment(Alignment::Left);
+    frame.render_widget(text, inner);
+}
+
+fn render_diff_search_dialog(frame: &mut Frame, area: Rect, input: &str) {
+    use ratatui::layout::Alignment;
+
+    let Some(inner) = create_centered_dialog(frame, area, " Search ", 50, 3, Color::Yellow) else {
+        return;
+    };
+
+    let text = Paragraph::new(Line::from(vec![
+        Span::raw(input),
+        Span::styled("█", Style::default().fg(Color::Yellow)),
+    ]))
     .alignment(Alignment::Left);
     frame.render_widget(text, inner);
 }
@@ -802,23 +827,6 @@ fn render_badge_status_bar(
 /// Status bar for the diff view.
 fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     if render_error_bar(frame, area, app) {
-        return;
-    }
-
-    // DiffSearch dialog: render search input inline in status bar (tig-style)
-    if let Some(Dialog::DiffSearch { input, .. }) = &app.dialog {
-        use ratatui::text::Text;
-        let width = area.width as usize;
-        let search_text = format!("/{input}");
-        let cursor_char = "█";
-        let padding = " ".repeat(width.saturating_sub(search_text.len() + cursor_char.len()));
-        let bg = Color::Indexed(234);
-        let line = Line::from(vec![
-            Span::styled(search_text, Style::default().fg(Color::White).bg(bg)),
-            Span::styled(cursor_char, Style::default().fg(Color::Yellow).bg(bg)),
-            Span::styled(padding, Style::default().bg(bg)),
-        ]);
-        frame.render_widget(Paragraph::new(Text::from(line)), area);
         return;
     }
 

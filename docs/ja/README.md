@@ -16,9 +16,17 @@ upstream branch (例: feature-x)
  └── copse/task-c
 ```
 
+## 機能
+
+- **並列実行** — 複数の Claude Code タスクをそれぞれ独立した git worktree で同時実行
+- **タスクライフサイクル** — タスクの作成・開始・停止・マージ・同期・削除をひとつの画面で操作
+- **コードレビュー** — unified diff のハンク移動・検索、インラインレビューコメントをエージェントに送信
+- **分割レイアウト** — Tasks + Diff、Tasks + Agent、Diff + Agent の並列表示とフルスクリーン切替
+- **カスタマイズ** — TOML 設定でキーバインド、カラーテーマ、自動コミット、自動承認を管理
+
 ## Preview
 
-TODO
+![preview](../preview.gif)
 
 ## 必要なもの
 

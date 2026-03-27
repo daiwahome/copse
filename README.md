@@ -16,9 +16,17 @@ upstream branch (e.g. feature-x)
  └── copse/task-c
 ```
 
+## Features
+
+- **Parallel execution** — Run multiple Claude Code tasks simultaneously, each isolated in its own git worktree
+- **Task lifecycle** — Create, start, stop, merge, sync, and delete tasks from one place
+- **Code review** — Unified diffs with hunk navigation, search, and inline review comments sent to the agent
+- **Split layouts** — Tasks + Diff, Tasks + Agent, or Diff + Agent side by side; toggle fullscreen
+- **Configurable** — TOML config for key bindings, colors, auto-commit, and auto-permissions
+
 ## Preview
 
-TODO
+![preview](./docs/preview.gif)
 
 ## Requirements
 

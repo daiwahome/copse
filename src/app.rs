@@ -275,6 +275,8 @@ impl App {
                     }
                     task.waiting_for_input = false;
                     task.waiting_status_dirty = false;
+                    task.last_enter_at = None;
+                    task.first_waiting_at = None;
                     task.commits_ahead = task
                         .upstream
                         .as_ref()
@@ -374,7 +376,12 @@ impl App {
     /// Called once before each draw to avoid redundant PTY scans.
     pub fn flush_waiting_status(&mut self) {
         for task in &mut self.tasks {
-            if task.waiting_status_dirty {
+            // Also recheck when the grace-period timer has expired, so fast responses
+            // (echo + response in one PTY batch, PTY now quiet) eventually flip to waiting.
+            let timer_expired = task
+                .last_enter_at
+                .is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(300));
+            if task.waiting_status_dirty || timer_expired {
                 task.update_waiting_status();
                 task.waiting_status_dirty = false;
             }

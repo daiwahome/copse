@@ -52,6 +52,14 @@ pub struct Task {
     pub waiting_for_input: bool,
     /// True when PTY output has arrived since last `update_waiting_status` call
     pub waiting_status_dirty: bool,
+    /// Set when Enter is pressed; cleared when a non-waiting screen state is seen or
+    /// after 300 ms. Prevents flipping back to "waiting" before Claude has had time
+    /// to start processing (handles echo + response arriving in the same PTY batch).
+    pub last_enter_at: Option<std::time::Instant>,
+    /// Set when detect_waiting first returns true after the grace period.
+    /// "Waiting" is only accepted after 100 ms of consistent detection.
+    /// Resets to None when a non-waiting state is observed.
+    pub first_waiting_at: Option<std::time::Instant>,
     /// Scrollback offset for the agent view (0 = live view)
     pub scroll_offset: usize,
     /// Write end of the PTY (sends keyboard input). None while Stopped.
@@ -87,8 +95,9 @@ impl Task {
             .clone();
         let rows = screen.size().0 as usize;
         let cols = screen.size().1 as usize;
+        let cursor_row = screen.cursor_position().0;
 
-        let mut lines: Vec<String> = Vec::new();
+        let mut lines: Vec<(String, bool)> = Vec::new();
         for r in (0..rows).rev() {
             let row_text: String = (0..cols)
                 .filter_map(|c| {
@@ -101,12 +110,48 @@ impl Task {
             if trimmed.is_empty() {
                 continue;
             }
-            lines.push(trimmed);
-            if lines.len() >= 5 {
+            let has_cursor = r as u16 == cursor_row;
+            lines.push((trimmed, has_cursor));
+            if lines.len() >= 10 {
                 break;
             }
         }
-        self.waiting_for_input = detect_waiting(&lines);
+        // Clear the expired grace-period timer regardless of detection result.
+        if self
+            .last_enter_at
+            .is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(300))
+        {
+            self.last_enter_at = None;
+        }
+        match detect_waiting(&lines) {
+            WaitingDetection::Waiting => {
+                // Guard: don't flip back to "waiting" within 300 ms of Enter.
+                let grace_expired = self.last_enter_at.is_none();
+                if grace_expired {
+                    // Hysteresis: require 100 ms of consistent detection before accepting.
+                    let first = self
+                        .first_waiting_at
+                        .get_or_insert_with(std::time::Instant::now);
+                    if first.elapsed() >= std::time::Duration::from_millis(100) {
+                        self.waiting_for_input = true;
+                        self.first_waiting_at = None;
+                    }
+                }
+            }
+            WaitingDetection::Running => {
+                // Clear running signal: definitely not waiting.
+                self.first_waiting_at = None;
+                self.waiting_for_input = false;
+            }
+            WaitingDetection::Unknown => {
+                // No recognisable signal (e.g. completion list pushed ❯ out of scan
+                // window, or background PTY render between clear states).
+                // Maintain waiting_for_input unchanged.
+                // Reset hysteresis so a brief ❯ render during processing cannot
+                // accumulate through Unknown states to falsely accept "waiting".
+                self.first_waiting_at = None;
+            }
+        }
     }
 
     /// Derive the worktree path for a given task name.
@@ -425,8 +470,10 @@ impl Task {
             commits_ahead: None,
             upstream_exists: true,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
-            waiting_for_input: false,
+            waiting_for_input: true,
             waiting_status_dirty: false,
+            last_enter_at: None,
+            first_waiting_at: None,
             scroll_offset: 0,
             writer: None,
             _reader_task: None,
@@ -462,8 +509,10 @@ impl Task {
             commits_ahead,
             upstream_exists,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
-            waiting_for_input: false,
+            waiting_for_input: true,
             waiting_status_dirty: false,
+            last_enter_at: None,
+            first_waiting_at: None,
             scroll_offset: 0,
             writer: None,
             _reader_task: None,
@@ -575,8 +624,10 @@ impl Task {
             upstream_exists: true,
             worktree_path,
             parser,
-            waiting_for_input: false,
+            waiting_for_input: true,
             waiting_status_dirty: false,
+            last_enter_at: None,
+            first_waiting_at: None,
             scroll_offset: 0,
             writer: Some(writer),
             _reader_task: Some(reader_task),
@@ -679,6 +730,16 @@ impl Task {
             if !self.has_session {
                 self.has_session = true;
                 let _ = std::fs::write(self.session_marker_path(), "");
+            }
+            // Optimistically clear the waiting flag when Enter is submitted so the
+            // list view transitions from "waiting" to "running" immediately.
+            // The cursor moves away from the ❯ row after Enter, so the next
+            // update_waiting_status scan will not falsely re-detect "waiting"
+            // from the echoed input line.
+            if data.contains(&b'\r') {
+                self.waiting_for_input = false;
+                self.last_enter_at = Some(std::time::Instant::now());
+                self.first_waiting_at = None;
             }
         }
         Ok(())
@@ -880,79 +941,170 @@ fn parse_remote_url(url: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path_str))
 }
 
-/// Pure pattern-matching logic for detecting whether Claude is waiting for input.
-/// Inspects the last few non-empty PTY lines.
+/// Returns true if `line` looks like Claude Code's processing spinner.
 ///
-/// - "esc to interrupt" / "ctrl+c to interrupt" → busy (not waiting)
-/// - "esc to cancel" / prompt `❯` at line start → waiting for input
-fn detect_waiting(lines: &[String]) -> bool {
+/// Claude Code renders spinner frames as a Unicode dingbat/symbol character
+/// followed by a verb ending in "ing…", e.g. `✢ Simmering…` or `✽ Thinking…`.
+/// These characters fall in the Miscellaneous Symbols (U+2600–U+26FF) and
+/// Dingbats (U+2700–U+27FF) Unicode blocks.
+fn is_spinner_line(line: &str) -> bool {
+    let mut chars = line.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    let in_symbol_block = ('\u{2600}'..='\u{27FF}').contains(&first);
+    if !in_symbol_block {
+        return false;
+    }
+    let rest = chars.as_str().trim();
+    rest.ends_with("ing\u{2026}") || rest.ends_with("ing...")
+}
+
+/// Result of `detect_waiting`: what the PTY screen currently indicates.
+#[derive(Debug, PartialEq)]
+enum WaitingDetection {
+    /// Clear waiting signal: `❯` with cursor on its row, or "esc to cancel".
+    Waiting,
+    /// Clear running signal: spinner line or "esc to interrupt".
+    Running,
+    /// No recognisable indicator (e.g. completion list pushed ❯ out of scan range,
+    /// or blank area between renders). Caller should maintain the current state.
+    Unknown,
+}
+
+/// Pure pattern-matching logic for detecting whether Claude is waiting for input.
+/// Inspects the last few non-empty PTY lines (text + whether the cursor is on that row).
+///
+/// Returns:
+/// - `Running`  — spinner or "esc to interrupt" found
+/// - `Waiting`  — "esc to cancel" or `❯` with cursor found (and no running signal)
+/// - `Unknown`  — neither signal found; caller should keep current state unchanged
+///
+/// The cursor check prevents echoed input (`❯ test` on a row the cursor has
+/// left) from being mis-detected as a waiting prompt after Enter is pressed.
+/// `Unknown` handles the case where a completion list (after typing `/`) pushes
+/// the `❯` row out of the scan window: we neither accept nor reject waiting.
+fn detect_waiting(lines: &[(String, bool)]) -> WaitingDetection {
     let mut has_waiting_indicator = false;
-    for line in lines {
+    for (line, has_cursor) in lines {
         let lower = line.to_lowercase();
         if lower.contains("esc to interrupt") || lower.contains("ctrl+c to interrupt") {
-            return false;
+            return WaitingDetection::Running;
         }
-        if !has_waiting_indicator && (lower.contains("esc to cancel") || line.starts_with('❯')) {
+        if is_spinner_line(line) {
+            return WaitingDetection::Running;
+        }
+        if !has_waiting_indicator
+            && (lower.contains("esc to cancel") || (line.starts_with('❯') && *has_cursor))
+        {
             has_waiting_indicator = true;
         }
     }
-    has_waiting_indicator
+    if has_waiting_indicator {
+        WaitingDetection::Waiting
+    } else {
+        WaitingDetection::Unknown
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn lines(strs: &[&str]) -> Vec<String> {
-        strs.iter().map(|s| s.to_string()).collect()
+    /// Helper: build lines where none have the cursor (for busy/non-prompt tests).
+    fn nc(strs: &[&str]) -> Vec<(String, bool)> {
+        strs.iter().map(|s| (s.to_string(), false)).collect()
+    }
+
+    /// Helper: build lines where the first entry has the cursor.
+    fn with_cursor(strs: &[&str]) -> Vec<(String, bool)> {
+        strs.iter()
+            .enumerate()
+            .map(|(i, s)| (s.to_string(), i == 0))
+            .collect()
     }
 
     #[test]
     fn busy_when_esc_to_interrupt() {
-        let l = lines(&["Reading file...", "esc to interrupt"]);
-        assert!(!detect_waiting(&l));
+        let l = nc(&["Reading file...", "esc to interrupt"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
     }
 
     #[test]
     fn busy_when_ctrl_c_to_interrupt() {
-        let l = lines(&["Working...", "ctrl+c to interrupt"]);
-        assert!(!detect_waiting(&l));
+        let l = nc(&["Working...", "ctrl+c to interrupt"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
     }
 
     #[test]
     fn busy_takes_priority_over_prompt() {
-        let l = lines(&["❯", "esc to interrupt"]);
-        assert!(!detect_waiting(&l));
+        let l = with_cursor(&["❯", "esc to interrupt"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
+    }
+
+    #[test]
+    fn busy_when_spinner() {
+        let l = with_cursor(&["❯", "✢ Simmering\u{2026}"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
+    }
+
+    #[test]
+    fn busy_when_spinner_various_chars() {
+        let l = nc(&["✽ Thinking\u{2026}"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
     }
 
     #[test]
     fn waiting_when_esc_to_cancel() {
-        let l = lines(&["Do you want to proceed?", "esc to cancel"]);
-        assert!(detect_waiting(&l));
+        let l = nc(&["Do you want to proceed?", "esc to cancel"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Waiting);
     }
 
     #[test]
     fn waiting_when_prompt() {
-        let l = lines(&["❯"]);
-        assert!(detect_waiting(&l));
+        // cursor is on the ❯ row
+        let l = with_cursor(&["❯"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Waiting);
     }
 
     #[test]
-    fn not_waiting_when_empty() {
-        let l: Vec<String> = vec![];
-        assert!(!detect_waiting(&l));
+    fn waiting_when_typing_at_prompt() {
+        // user is mid-input: ❯ line with typed text, cursor still on that row
+        let l = with_cursor(&["❯ test"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Waiting);
     }
 
     #[test]
-    fn not_waiting_without_indicators() {
-        let l = lines(&["some output", "more output"]);
-        assert!(!detect_waiting(&l));
+    fn unknown_when_prompt_without_cursor() {
+        // echoed ❯ line after Enter: cursor has moved away → unknown (maintain state)
+        let l = nc(&["❯ test"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
+    }
+
+    #[test]
+    fn unknown_when_empty() {
+        let l: Vec<(String, bool)> = vec![];
+        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
+    }
+
+    #[test]
+    fn unknown_without_indicators() {
+        // completion list items or plain output: no clear signal
+        let l = nc(&["some output", "more output"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
+    }
+
+    #[test]
+    fn unknown_slash_completion_list() {
+        // `/` completion pushed ❯ out of scan range; only completion items visible
+        let l = nc(&["/review", "/chat", "/help", "/commit"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
     }
 
     #[test]
     fn gt_no_longer_triggers_waiting() {
-        let l = lines(&["> quoted text in output"]);
-        assert!(!detect_waiting(&l));
+        let l = nc(&["> quoted text in output"]);
+        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
     }
 
     #[test]

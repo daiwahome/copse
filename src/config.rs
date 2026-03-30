@@ -7,6 +7,23 @@ use crate::keybind::RawKeyBindings;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum Backend {
+    #[default]
+    BuiltIn,
+    Tmux,
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Backend::BuiltIn => write!(f, "builtin"),
+            Backend::Tmux => write!(f, "tmux"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DiffFilter {
     #[default]
     Auto,
@@ -36,6 +53,8 @@ pub struct Config {
     pub auto_permissions: bool,
     pub permission_mode: String,
     #[serde(default)]
+    pub backend: Backend,
+    #[serde(default)]
     pub diff_filter: DiffFilter,
     #[serde(default)]
     pub color: ColorConfig,
@@ -49,6 +68,7 @@ impl Default for Config {
             auto_commit: false,
             auto_permissions: false,
             permission_mode: "default".to_string(),
+            backend: Backend::default(),
             diff_filter: DiffFilter::default(),
             color: ColorConfig::default(),
             keys: RawKeyBindings::default(),
@@ -96,6 +116,7 @@ impl Config {
         out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
         out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
         out.push_str(&format!("permission_mode = \"{}\"\n", self.permission_mode));
+        out.push_str(&format!("backend = \"{}\"\n", self.backend));
         out.push_str(&format!("diff_filter = \"{}\"\n", self.diff_filter));
         out.push_str("\n[color]\n");
 

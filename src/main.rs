@@ -1,4 +1,5 @@
 mod app;
+mod backend;
 mod config;
 mod diff;
 mod event;
@@ -47,6 +48,10 @@ async fn main() -> anyhow::Result<()> {
     let worktree_base_dir = task::worktree_base_dir(&repo_root)?;
     let config = config::Config::load()?;
 
+    config.backend.validate()?;
+
+    let backend = config.backend.clone();
+
     // Restore the terminal even on panic
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -71,22 +76,34 @@ async fn main() -> anyhow::Result<()> {
     // Populate existing copse/* branches as Stopped tasks on startup
     let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
     for name in task::Task::list_existing(&repo_root) {
-        app.tasks.push(task::Task::from_existing(
-            name,
+        let mut t = task::Task::from_existing(
+            name.clone(),
             &repo_root,
             &worktree_base_dir,
+            backend.clone(),
             rows,
             cols,
-        ));
+        );
+        // Detect running backend sessions
+        if let Some(session) = backend.detect_running_session(&repo_root, &name) {
+            t.session_id = Some(session);
+            t.status = task::TaskStatus::Running;
+            t.waiting_for_input = false;
+        }
+        app.tasks.push(t);
     }
 
     tui.spawn_input_reader();
     let run_result = tui.run(&mut app).await;
 
-    // Kill all running Claude Code processes on every exit path.
+    // On exit: detach (background) or kill depending on backend.
     // Worktrees and branches are left intact for fast resume on next launch.
     for task in &mut app.tasks {
-        let _ = task.kill();
+        if backend.supports_detach() {
+            task.detach();
+        } else {
+            let _ = task.kill();
+        }
     }
 
     run_result

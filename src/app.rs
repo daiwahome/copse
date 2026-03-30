@@ -268,12 +268,7 @@ impl App {
                 }
             },
             AppEvent::TaskExited(id) => {
-                // Mark as Stopped but keep the task in the list
                 if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
-                    if task.status != crate::task::TaskStatus::Deleting {
-                        task.status = crate::task::TaskStatus::Stopped;
-                    }
-                    task.waiting_for_input = false;
                     task.waiting_status_dirty = false;
                     task.last_enter_at = None;
                     task.first_waiting_at = None;
@@ -281,6 +276,18 @@ impl App {
                         .upstream
                         .as_ref()
                         .and_then(|u| Task::compute_commits_ahead(&self.repo_root, &task.name, u));
+
+                    // Check if the backend session is still alive.
+                    // If alive, the task stays Running (background); otherwise Stopped.
+                    let session_alive = task.backend.is_session_alive(task.session_id.as_deref());
+
+                    task.waiting_for_input = false;
+                    if !session_alive {
+                        if task.status != crate::task::TaskStatus::Deleting {
+                            task.status = crate::task::TaskStatus::Stopped;
+                        }
+                        task.session_id = None;
+                    }
                 }
                 if self.focused_task_id() == Some(id) {
                     self.close_agent();
@@ -341,11 +348,25 @@ impl App {
         }
         // Help shortcut – works from any view
         if key.code == KeyCode::Char('?') {
-            let entries = match self.focused_view() {
+            let mut entries = match self.focused_view() {
                 View::Tasks => keybind::tasks_help_entries(&self.key_bindings.tasks),
-                View::Agent => keybind::agent_help_entries(&self.key_bindings.agent),
+                View::Agent => {
+                    let exclude = if self.config.backend.handles_scrollback() {
+                        vec![AgentAction::PageUp, AgentAction::PageDown]
+                    } else {
+                        vec![]
+                    };
+                    keybind::agent_help_entries(&self.key_bindings.agent, &exclude)
+                }
                 View::Diff => keybind::diff_help_entries(&self.key_bindings.diff),
             };
+            if self.focused_view() == View::Agent && self.config.backend.handles_scrollback() {
+                entries.push(("".to_string(), ""));
+                entries.push(("".to_string(), "Scroll (tmux copy-mode)"));
+                entries.push(("Ctrl-B".to_string(), "Page up (enter copy-mode)"));
+                entries.push(("Ctrl-F".to_string(), "Page down"));
+                entries.push(("q".to_string(), "Exit copy-mode"));
+            }
             self.dialog = Some(Dialog::Help { entries });
             return Ok(());
         }
@@ -508,8 +529,15 @@ impl App {
                 let upstream = branches[selected].clone();
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
                 let content_rows = rows.saturating_sub(1);
-                let task =
-                    Task::new_stopped(name, upstream, &self.worktree_base_dir, content_rows, cols);
+                let backend = self.config.backend.clone();
+                let task = Task::new_stopped(
+                    name,
+                    upstream,
+                    &self.worktree_base_dir,
+                    backend,
+                    content_rows,
+                    cols,
+                );
                 let _ = self.event_tx.try_send(AppEvent::TaskCreated(task));
             }
             _ => {
@@ -540,8 +568,19 @@ impl App {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some(task) = self.tasks.get_mut(self.selected_index) {
+                    let was_detached = task.is_running() && !task.is_attached();
                     if let Err(e) = task.kill() {
                         self.last_error = Some(format!("Failed to kill task: {e}"));
+                    }
+                    // Detached tmux tasks have no PTY reader, so TaskExited won't fire.
+                    // Transition to Stopped immediately.
+                    if was_detached {
+                        task.status = crate::task::TaskStatus::Stopped;
+                        task.waiting_for_input = false;
+                        task.session_id = None;
+                        task.commits_ahead = task.upstream.as_ref().and_then(|u| {
+                            Task::compute_commits_ahead(&self.repo_root, &task.name, u)
+                        });
                     }
                 }
             }
@@ -558,6 +597,7 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let repo_root = self.repo_root.clone();
                 let worktree_base_dir = self.worktree_base_dir.clone();
+                let backend = self.config.backend.clone();
                 if let Some(task) = self.tasks.get_mut(self.selected_index) {
                     let id = task.id;
                     let name = task.name.clone();
@@ -565,7 +605,7 @@ impl App {
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
-                            Task::delete_task(&repo_root, &worktree_base_dir, &name)
+                            Task::delete_task(&repo_root, &worktree_base_dir, &name, &backend)
                         })
                         .await;
                         match result {
@@ -832,11 +872,15 @@ impl App {
             TasksAction::OpenTask => {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     match task.status {
-                        crate::task::TaskStatus::Running => {
+                        crate::task::TaskStatus::Running if task.is_attached() => {
                             self.push_agent(task.id);
                             self.fullscreen = None;
                             self.focus = self.pane_of(View::Agent);
                             self.sync_pty_size();
+                        }
+                        crate::task::TaskStatus::Running => {
+                            // Running but detached (tmux background) — attach
+                            self.resume_task(self.selected_index, false);
                         }
                         crate::task::TaskStatus::Stopped => {
                             self.resume_task(self.selected_index, false);
@@ -964,7 +1008,7 @@ impl App {
                         .tasks
                         .iter()
                         .any(|t| t.status == crate::task::TaskStatus::Running);
-                    if has_running {
+                    if has_running && self.config.backend.needs_quit_confirmation() {
                         self.dialog = Some(Dialog::ConfirmQuit);
                     } else {
                         self.should_quit = true;
@@ -996,7 +1040,18 @@ impl App {
     }
 
     fn handle_agent_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
-        if let Some(action) = self.key_bindings.agent.lookup(&key) {
+        // When the backend handles scrollback natively (e.g. tmux copy-mode),
+        // let PageUp/PageDown pass through to the PTY instead of handling them here.
+        let action = self.key_bindings.agent.lookup(&key).filter(|a| {
+            if matches!(a, AgentAction::PageUp | AgentAction::PageDown) {
+                !self
+                    .focused_task()
+                    .is_some_and(|t| t.backend.handles_scrollback())
+            } else {
+                true
+            }
+        });
+        if let Some(action) = action {
             match action {
                 AgentAction::Fullscreen => {
                     self.toggle_fullscreen(View::Agent);

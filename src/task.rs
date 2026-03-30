@@ -4,12 +4,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+use portable_pty::{MasterPty, NativePtySystem, PtySize, PtySystem};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use etcetera::BaseStrategy;
 
-use crate::config::Config;
+use crate::config::{Backend, Config};
 use crate::event::{AppEvent, TaskId};
 
 const SCROLLBACK_LEN: usize = 10_000;
@@ -62,6 +62,10 @@ pub struct Task {
     pub first_waiting_at: Option<std::time::Instant>,
     /// Scrollback offset for the agent view (0 = live view)
     pub scroll_offset: usize,
+    /// Backend used for this task
+    pub backend: Backend,
+    /// Backend session identifier (e.g. tmux session name). None for BuiltIn.
+    pub session_id: Option<String>,
     /// Write end of the PTY (sends keyboard input). None while Stopped.
     writer: Option<Box<dyn Write + Send>>,
     /// Background task that reads PTY output. None while Stopped.
@@ -79,6 +83,12 @@ impl Task {
 
     pub fn is_stopped(&self) -> bool {
         self.status == TaskStatus::Stopped
+    }
+
+    /// Whether this task has a PTY attached (i.e. copse is connected to the process).
+    /// A tmux-backed task can be Running but not attached (background execution).
+    pub fn is_attached(&self) -> bool {
+        self.writer.is_some()
     }
 
     /// Re-scan PTY screen and update the cached `waiting_for_input` flag.
@@ -457,6 +467,7 @@ impl Task {
         name: String,
         upstream: String,
         worktree_base_dir: &Path,
+        backend: Backend,
         rows: u16,
         cols: u16,
     ) -> Self {
@@ -475,6 +486,8 @@ impl Task {
             last_enter_at: None,
             first_waiting_at: None,
             scroll_offset: 0,
+            backend,
+            session_id: None,
             writer: None,
             _reader_task: None,
             master: None,
@@ -488,6 +501,7 @@ impl Task {
         name: String,
         repo_root: &Path,
         worktree_base_dir: &Path,
+        backend: Backend,
         rows: u16,
         cols: u16,
     ) -> Self {
@@ -514,6 +528,8 @@ impl Task {
             last_enter_at: None,
             first_waiting_at: None,
             scroll_offset: 0,
+            backend,
+            session_id: None,
             writer: None,
             _reader_task: None,
             master: None,
@@ -551,8 +567,19 @@ impl Task {
 
         // Set up .claude/settings.local.json based on config
         let wp = worktree_path.clone();
+        let backend = config.backend.clone();
         let permission_mode = config.permission_mode.clone();
         tokio::task::spawn_blocking(move || Self::setup_claude_settings(&wp, &config)).await??;
+
+        let session_id = backend.create_session(&crate::backend::SessionParams {
+            repo_root: &repo_root,
+            task_name: &name,
+            worktree_path: &worktree_path,
+            cols,
+            rows,
+            has_session,
+            permission_mode: &permission_mode,
+        })?;
 
         let pty_system = NativePtySystem::default();
         let pair = pty_system.openpty(PtySize {
@@ -562,14 +589,12 @@ impl Task {
             pixel_height: 0,
         })?;
 
-        let mut cmd = CommandBuilder::new("claude");
-        if has_session {
-            cmd.arg("--continue");
-        }
-        cmd.args(["--permission-mode", &permission_mode]);
-        cmd.env("TERM", "xterm-256color");
-        // Run claude inside the worktree directory so it picks up the branch
-        cmd.cwd(&worktree_path);
+        let cmd = backend.build_pty_command(
+            session_id.as_deref(),
+            &worktree_path,
+            has_session,
+            &permission_mode,
+        );
 
         let child = pair.slave.spawn_command(cmd)?;
         // The slave side is no longer needed once the child is spawned
@@ -629,6 +654,8 @@ impl Task {
             last_enter_at: None,
             first_waiting_at: None,
             scroll_offset: 0,
+            backend,
+            session_id,
             writer: Some(writer),
             _reader_task: Some(reader_task),
             master: Some(pair.master),
@@ -641,7 +668,11 @@ impl Task {
         repo_root: &Path,
         worktree_base_dir: &Path,
         name: &str,
+        backend: &Backend,
     ) -> anyhow::Result<()> {
+        // Kill any running backend session for this task
+        backend.kill_session(backend.session_id(repo_root, name).as_deref());
+
         let worktree_path = Self::worktree_path_for(worktree_base_dir, name);
         let branch = Self::branch_name(name);
 
@@ -757,6 +788,8 @@ impl Task {
                 pixel_height: 0,
             })?;
         }
+        self.backend
+            .resize_session(self.session_id.as_deref(), cols, rows);
         self.parser
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -854,8 +887,23 @@ impl Task {
         Ok(())
     }
 
+    /// Detach from the PTY without killing the backend session.
+    /// The Claude process continues running in the background.
+    /// Kills the PTY child (e.g. `tmux attach-session`) so the reader task
+    /// gets EOF and exits cleanly. This does NOT kill the backend session.
+    pub fn detach(&mut self) {
+        if let Some(killer) = &mut self.killer {
+            let _ = killer.kill();
+        }
+        self.writer = None;
+        self._reader_task = None;
+        self.master = None;
+        self.killer = None;
+    }
+
     /// Forcibly terminate the task
     pub fn kill(&mut self) -> anyhow::Result<()> {
+        self.backend.kill_session(self.session_id.as_deref());
         if let Some(killer) = &mut self.killer {
             killer
                 .kill()
@@ -880,7 +928,7 @@ pub fn worktree_base_dir(repo_root: &Path) -> anyhow::Result<PathBuf> {
 
 /// Derive a ghq-style repository identifier from the origin remote URL.
 /// Falls back to the directory name of `repo_root` if no origin remote is configured.
-fn repo_id(repo_root: &Path) -> PathBuf {
+pub(crate) fn repo_id(repo_root: &Path) -> PathBuf {
     if let Some(url) = origin_url(repo_root) {
         if let Some(parsed) = parse_remote_url(&url) {
             return parsed;

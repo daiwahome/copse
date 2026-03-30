@@ -19,6 +19,7 @@ If the file already exists, the command exits with an error to prevent overwriti
 auto_commit = false
 auto_permissions = false
 permission_mode = "default"
+backend = "builtin"
 diff_filter = "auto"
 
 [color]
@@ -92,6 +93,7 @@ page-down = ["Ctrl-F"]
 | `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response   |
 | `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code        |
 | `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks        |
+| `backend`          | string | `"builtin"` | Process backend: `"builtin"` or `"tmux"`         |
 | `diff_filter`      | string | `"auto"`    | Diff colorizer: `"auto"`, `"delta"`, or `"none"` |
 
 ### Permission Mode
@@ -108,6 +110,28 @@ When set, copse passes `--permission-mode <mode>` to every `claude` invocation. 
 | `dontAsk`           | Skip disallowed operations silently      |
 
 The mode can be changed during a session within Claude Code (e.g. via `/permissions`).
+
+### Backend
+
+Controls how Claude Code processes are managed.
+
+| Value     | Description                                                                                          |
+| --------- | ---------------------------------------------------------------------------------------------------- |
+| `builtin` | Default — runs claude directly in a PTY; processes are killed when copse exits                       |
+| `tmux`    | Runs claude inside a tmux session; processes continue running after copse exits (requires tmux 3.0+) |
+
+When using the `tmux` backend:
+
+- Claude processes keep running in the background when copse exits
+- On restart, copse detects existing tmux sessions and shows them as Running
+- Opening a Running (detached) task reattaches to the tmux session
+- Requires tmux to be installed; copse exits with an error if tmux is not found
+
+copse runs its own tmux server (socket `copse`) with no user configuration. Sessions are named `<host>/<owner>/<repo>/<task>`. You can check running sessions with:
+
+```sh
+tmux -L copse list-sessions
+```
 
 ### Diff Filter
 

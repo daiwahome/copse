@@ -478,8 +478,10 @@ pub fn default_keys_toml() -> String {
 fn build_help_entries<A: Copy + Eq + std::hash::Hash>(
     bindings: &ViewBindings<A>,
     defs: &[ActionDef<A>],
+    exclude: &[A],
 ) -> Vec<(String, &'static str)> {
     defs.iter()
+        .filter(|def| !exclude.contains(&def.action))
         .filter_map(|def| {
             let mut keys: Vec<String> = bindings
                 .map
@@ -497,15 +499,18 @@ fn build_help_entries<A: Copy + Eq + std::hash::Hash>(
 }
 
 pub fn tasks_help_entries(bindings: &ViewBindings<TasksAction>) -> Vec<(String, &'static str)> {
-    build_help_entries(bindings, tasks_action_defs())
+    build_help_entries(bindings, tasks_action_defs(), &[])
 }
 
-pub fn agent_help_entries(bindings: &ViewBindings<AgentAction>) -> Vec<(String, &'static str)> {
-    build_help_entries(bindings, agent_action_defs())
+pub fn agent_help_entries(
+    bindings: &ViewBindings<AgentAction>,
+    exclude: &[AgentAction],
+) -> Vec<(String, &'static str)> {
+    build_help_entries(bindings, agent_action_defs(), exclude)
 }
 
 pub fn diff_help_entries(bindings: &ViewBindings<DiffAction>) -> Vec<(String, &'static str)> {
-    build_help_entries(bindings, diff_action_defs())
+    build_help_entries(bindings, diff_action_defs(), &[])
 }
 
 // ---------------------------------------------------------------------------

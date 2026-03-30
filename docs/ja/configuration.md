@@ -19,6 +19,7 @@ copse --init
 auto_commit = false
 auto_permissions = false
 permission_mode = "default"
+backend = "builtin"
 diff_filter = "auto"
 
 [color]
@@ -87,12 +88,13 @@ page-down = ["Ctrl-F"]
 
 ## オプション
 
-| オプション         | 型     | デフォルト  | 説明                                           |
-| ------------------ | ------ | ----------- | ---------------------------------------------- |
-| `auto_commit`      | bool   | `false`     | Claude の応答ごとに変更を自動コミット          |
-| `auto_permissions` | bool   | `false`     | 安全なコマンドを Claude Code で自動承認        |
-| `permission_mode`  | string | `"default"` | 全タスクの Claude Code パーミッションモード    |
-| `diff_filter`      | string | `"auto"`    | Diff の着色方法: `"auto"`, `"delta"`, `"none"` |
+| オプション         | 型     | デフォルト  | 説明                                              |
+| ------------------ | ------ | ----------- | ------------------------------------------------- |
+| `auto_commit`      | bool   | `false`     | Claude の応答ごとに変更を自動コミット             |
+| `auto_permissions` | bool   | `false`     | 安全なコマンドを Claude Code で自動承認           |
+| `permission_mode`  | string | `"default"` | 全タスクの Claude Code パーミッションモード       |
+| `backend`          | string | `"builtin"` | プロセスバックエンド: `"builtin"` または `"tmux"` |
+| `diff_filter`      | string | `"auto"`    | Diff の着色方法: `"auto"`, `"delta"`, `"none"`    |
 
 ### Permission Mode
 
@@ -108,6 +110,28 @@ page-down = ["Ctrl-F"]
 | `dontAsk`           | 許可されていない操作を黙ってスキップ |
 
 session 中に Claude Code 内でモードを変更することもできる（例: `/permissions`）。
+
+### Backend
+
+Claude Code プロセスの管理方法を制御する。
+
+| 値        | 説明                                                                                   |
+| --------- | -------------------------------------------------------------------------------------- |
+| `builtin` | デフォルト — PTY で直接 claude を実行。copse 終了時にプロセスを終了する                |
+| `tmux`    | tmux セッション内で claude を実行。copse 終了後もプロセスが継続する (tmux 3.0+ が必要) |
+
+`tmux` バックエンド使用時:
+
+- copse 終了時、Claude プロセスはバックグラウンドで継続実行される
+- copse 再起動時、既存の tmux セッションを自動検出し Running として表示する
+- Running (デタッチ状態) のタスクを開くと tmux セッションに再接続する
+- tmux のインストールが必要。未インストールの場合、copse はエラーで終了する
+
+copse は独自の tmux サーバー (ソケット名 `copse`) をユーザー設定なしで起動する。セッション名は `<host>/<owner>/<repo>/<task>` 形式。実行中のセッションは以下で確認できる:
+
+```sh
+tmux -L copse list-sessions
+```
 
 ### Diff Filter
 

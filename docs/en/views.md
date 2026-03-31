@@ -9,9 +9,10 @@ The default view. Shows all tasks with their status, upstream branch, and commit
 ### Display
 
 ```
-▶ task-a  (upstream: feature-x)  running   3 ahead
-⏸ task-b  (upstream: develop)    waiting   synced
-■ task-c  (upstream: feature-y)  stopped   1 ahead
+  Name     Upstream    Status    Commits
+▶ task-a   feature-x   running   3 ahead
+⏸ task-b   develop     waiting   synced
+■ task-c   feature-y   stopped   1 ahead
 ```
 
 Each task shows:

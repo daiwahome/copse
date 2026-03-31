@@ -44,6 +44,7 @@ diff-header = { fg = "white" }
 diff-context = { fg = "white" }
 list-highlight = { fg = "166", bg = "234" }
 list-highlight-blur = { fg = "252", bg = "234" }
+list-header = { fg = "245" }
 
 [keys.global]
 focus-toggle = ["Ctrl-W"]
@@ -198,6 +199,7 @@ delta 使用時はシンタックスハイライト、背景色による差分�
 | `diff-context`        | Diff のコンテキスト行                        |
 | `list-highlight`      | タスクリストの選択行（フォーカス時）         |
 | `list-highlight-blur` | タスクリストの選択行（フォーカス喪失時）     |
+| `list-header`         | タスクリストのヘッダー行                     |
 
 不正な色名が指定された場合、起動時にステータスバーにワーニングが表示される。
 

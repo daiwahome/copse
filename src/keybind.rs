@@ -64,6 +64,7 @@ pub enum AgentAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GlobalAction {
     FocusToggle,
+    Help,
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +244,21 @@ impl<A: Copy> ViewBindings<A> {
         let kb = KeyBind::from_event(key);
         self.map.get(&kb).copied()
     }
+
+    /// Return the shortest display string for the first key bound to `action`.
+    pub fn hint_key(&self, action: A) -> String
+    where
+        A: Eq + std::hash::Hash,
+    {
+        let mut keys: Vec<String> = self
+            .map
+            .iter()
+            .filter(|(_, a)| **a == action)
+            .map(|(kb, _)| kb.display())
+            .collect();
+        keys.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+        keys.into_iter().next().unwrap_or_default()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +347,7 @@ fn agent_action_defs() -> &'static [ActionDef<AgentAction>] {
 fn global_action_defs() -> &'static [ActionDef<GlobalAction>] {
     action_defs! {
         "focus-toggle", "Toggle focus" => GlobalAction::FocusToggle, ["Ctrl-W"];
+        "help", "Show help" => GlobalAction::Help, ["Ctrl-G"];
     }
 }
 

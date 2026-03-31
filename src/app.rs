@@ -346,51 +346,6 @@ impl App {
         if self.dialog.is_some() {
             return self.handle_dialog_key(key);
         }
-        // Help shortcut – works from any view
-        if key.code == KeyCode::Char('?') {
-            use AgentAction::*;
-            let scroll_mode_actions = [LineUp, LineDown, HalfPageUp, HalfPageDown, ExitScrollMode];
-            let mut entries = match self.focused_view() {
-                View::Tasks => keybind::tasks_help_entries(&self.key_bindings.tasks),
-                View::Agent => {
-                    let exclude: Vec<AgentAction> = if self.config.backend.handles_scrollback() {
-                        vec![
-                            PageUp,
-                            PageDown,
-                            LineUp,
-                            LineDown,
-                            HalfPageUp,
-                            HalfPageDown,
-                            ExitScrollMode,
-                        ]
-                    } else {
-                        scroll_mode_actions.to_vec()
-                    };
-                    keybind::agent_help_entries(&self.key_bindings.agent, &exclude)
-                }
-                View::Diff => keybind::diff_help_entries(&self.key_bindings.diff),
-            };
-            if self.focused_view() == View::Agent {
-                if self.config.backend.handles_scrollback() {
-                    entries.push(("".to_string(), ""));
-                    entries.push(("".to_string(), "Scroll (tmux copy-mode)"));
-                    entries.push(("Ctrl-B".to_string(), "Page up (enter copy-mode)"));
-                    entries.push(("Ctrl-F".to_string(), "Page down"));
-                    entries.push(("/".to_string(), "Search"));
-                    entries.push(("n".to_string(), "Next match"));
-                    entries.push(("N".to_string(), "Previous match"));
-                    entries.push(("q / Enter".to_string(), "Exit copy-mode"));
-                } else {
-                    entries.push(("".to_string(), ""));
-                    entries.push(("".to_string(), "Scroll mode (active after scroll)"));
-                    let scroll_entries =
-                        keybind::agent_help_entries(&self.key_bindings.agent, &[Fullscreen, Close]);
-                    entries.extend(scroll_entries);
-                }
-            }
-            self.dialog = Some(Dialog::Help { entries });
-            return Ok(());
-        }
         // Global bindings
         if let Some(action) = self.key_bindings.global.lookup(&key) {
             match action {
@@ -401,6 +356,53 @@ impl App {
                             Pane::Right => Pane::Left,
                         };
                     }
+                }
+                GlobalAction::Help => {
+                    use AgentAction::*;
+                    let scroll_mode_actions =
+                        [LineUp, LineDown, HalfPageUp, HalfPageDown, ExitScrollMode];
+                    let mut entries = match self.focused_view() {
+                        View::Tasks => keybind::tasks_help_entries(&self.key_bindings.tasks),
+                        View::Agent => {
+                            let exclude: Vec<AgentAction> =
+                                if self.config.backend.handles_scrollback() {
+                                    vec![
+                                        PageUp,
+                                        PageDown,
+                                        LineUp,
+                                        LineDown,
+                                        HalfPageUp,
+                                        HalfPageDown,
+                                        ExitScrollMode,
+                                    ]
+                                } else {
+                                    scroll_mode_actions.to_vec()
+                                };
+                            keybind::agent_help_entries(&self.key_bindings.agent, &exclude)
+                        }
+                        View::Diff => keybind::diff_help_entries(&self.key_bindings.diff),
+                    };
+                    if self.focused_view() == View::Agent {
+                        if self.config.backend.handles_scrollback() {
+                            entries.push(("".to_string(), ""));
+                            entries.push(("".to_string(), "Scroll (tmux copy-mode)"));
+                            entries.push(("Ctrl-B".to_string(), "Page up (enter copy-mode)"));
+                            entries.push(("Ctrl-F".to_string(), "Page down"));
+                            entries.push(("/".to_string(), "Search"));
+                            entries.push(("n".to_string(), "Next match"));
+                            entries.push(("N".to_string(), "Previous match"));
+                            entries.push(("q / Enter".to_string(), "Exit copy-mode"));
+                        } else {
+                            entries.push(("".to_string(), ""));
+                            entries.push(("".to_string(), "Scroll mode (active after scroll)"));
+                            let scroll_entries = keybind::agent_help_entries(
+                                &self.key_bindings.agent,
+                                &[Fullscreen, Close],
+                            );
+                            entries.extend(scroll_entries);
+                        }
+                    }
+                    self.dialog = Some(Dialog::Help { entries });
                 }
             }
             return Ok(());

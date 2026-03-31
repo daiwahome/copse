@@ -262,7 +262,7 @@ When `auto_permissions` is enabled, copse pre-approves the following safe comman
 | Category        | Commands                                                                                                                                                |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Git (read-only) | `blame`, `branch`, `cat-file`, `config`, `diff`, `log`, `ls-files`, `ls-tree`, `remote`, `rev-parse`, `shortlog`, `show`, `stash list`, `status`, `tag` |
-| Directory       | `ls`, `tree`, `pwd`, `mkdir`                                                                                                                            |
+| Directory       | `find`, `ls`, `tree`, `pwd`, `mkdir`                                                                                                                    |
 | Text processing | `wc`, `diff` (coreutils), `sort`, `uniq`, `cut`                                                                                                         |
 | Utilities       | `echo`, `which`, `file`, `date`, `basename`, `dirname`                                                                                                  |
 | Built-in tools  | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write`                                                                                                |

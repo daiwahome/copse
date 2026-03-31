@@ -262,7 +262,7 @@ Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュさ
 | カテゴリ       | コマンド                                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Git (参照系)   | `blame`, `branch`, `cat-file`, `config`, `diff`, `log`, `ls-files`, `ls-tree`, `remote`, `rev-parse`, `shortlog`, `show`, `stash list`, `status`, `tag` |
-| ディレクトリ   | `ls`, `tree`, `pwd`, `mkdir`                                                                                                                            |
+| ディレクトリ   | `find`, `ls`, `tree`, `pwd`, `mkdir`                                                                                                                    |
 | テキスト処理   | `wc`, `diff` (coreutils), `sort`, `uniq`, `cut`                                                                                                         |
 | ユーティリティ | `echo`, `which`, `file`, `date`, `basename`, `dirname`                                                                                                  |
 | 組み込みツール | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write`                                                                                                |

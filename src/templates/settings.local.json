@@ -21,6 +21,7 @@
       "Bash(dirname *)",
       "Bash(echo *)",
       "Bash(file *)",
+      "Bash(find *)",
       "Bash(git blame:*)",
       "Bash(git branch:*)",
       "Bash(git cat-file:*)",

@@ -14,6 +14,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, ChildView, Dialog, Pane, View, ViewLayout};
 use crate::diff::DiffState;
+use crate::keybind::{AgentAction, DiffAction, GlobalAction, TasksAction};
 
 /// Truncate a string to fit within `max_width` display columns (Unicode-safe).
 fn truncate_to_width(s: &str, max_width: usize) -> String {
@@ -144,8 +145,7 @@ fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
-    let hints: &[(&str, &str)] = &[("?", "help"), ("C-w", "focus"), ("q", "back")];
-    render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
+    render_split_tasks_status_bar(frame, left_rows[1], app, focus, "focus");
 
     // Right pane: agent
     let right_rows = Layout::default()
@@ -192,8 +192,7 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     render_tasks_pane(frame, left_rows[0], app, focus == Pane::Left);
-    let hints: &[(&str, &str)] = &[("?", "help"), ("C-w", "diff"), ("q", "back")];
-    render_split_tasks_status_bar(frame, left_rows[1], app, focus, hints);
+    render_split_tasks_status_bar(frame, left_rows[1], app, focus, "diff");
 
     // Right pane: diff view
     let right_rows = Layout::default()
@@ -308,7 +307,7 @@ fn render_split_tasks_status_bar(
     area: Rect,
     app: &App,
     focus: Pane,
-    hints: &[(&str, &str)],
+    focus_label: &str,
 ) {
     if render_error_bar(frame, area, app) {
         return;
@@ -316,6 +315,25 @@ fn render_split_tasks_status_bar(
     let left = format_task_info(app);
     let t = &app.theme;
     let focused = focus == Pane::Left;
+
+    let kb = &app.key_bindings;
+    let help_key = kb.global.hint_key(GlobalAction::Help);
+    let focus_key = kb.global.hint_key(GlobalAction::FocusToggle);
+    let quit_key = kb.tasks.hint_key(TasksAction::Quit);
+    let hints_owned = [
+        (help_key, "help"),
+        (focus_key.clone(), focus_label),
+        (quit_key, "back"),
+    ];
+    let focused_hints = to_hint_refs(&hints_owned);
+    let unfocused_owned = [(focus_key, "focus")];
+    let unfocused_hints = to_hint_refs(&unfocused_owned);
+    let hints = if focused {
+        &focused_hints
+    } else {
+        &unfocused_hints
+    };
+
     let styles = StatusBarStyle {
         badge: if focused {
             t.title_focus_tasks
@@ -329,7 +347,7 @@ fn render_split_tasks_status_bar(
         },
         hints: t.title_hints,
     };
-    render_badge_status_bar(frame, area, " TASKS ", &styles, &left, hints, focused);
+    render_badge_status_bar(frame, area, " TASKS ", &styles, &left, hints);
 }
 
 /// Status bar for the tasks view.
@@ -340,6 +358,13 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     let left = format_task_info(app);
 
+    let kb = &app.key_bindings;
+    let help_key = kb.global.hint_key(GlobalAction::Help);
+    let quit_key = kb.tasks.hint_key(TasksAction::Quit);
+
+    let default_hints_owned = [(help_key, "help"), (quit_key, "quit")];
+    let default_hints = to_hint_refs(&default_hints_owned);
+
     let hints: &[(&str, &str)] = match &app.dialog {
         Some(Dialog::ConfirmKill) => &[("y", "kill"), ("n/Esc", "cancel")],
         Some(Dialog::ConfirmDelete) => &[("y", "delete"), ("n/Esc", "cancel")],
@@ -348,7 +373,7 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         Some(Dialog::ChangeUpstream { .. }) => {
             &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]
         }
-        _ => &[("?", "help"), ("q", "quit")],
+        _ => &default_hints,
     };
 
     let t = &app.theme;
@@ -363,7 +388,6 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         },
         &left,
         hints,
-        true,
     );
 }
 
@@ -392,10 +416,26 @@ fn render_agent_status_bar(
         location.push_str(&format!(" [SCROLL +{}]", scroll_offset));
     }
 
-    let hints: &[(&str, &str)] = if full {
-        &[("?", "help"), ("C-q", "back")]
+    let kb = &app.key_bindings;
+    let help_key = kb.global.hint_key(GlobalAction::Help);
+    let focus_key = kb.global.hint_key(GlobalAction::FocusToggle);
+    let close_key = kb.agent.hint_key(AgentAction::Close);
+    let hints_owned = if full {
+        vec![(help_key, "help"), (close_key, "back")]
     } else {
-        &[("?", "help"), ("C-w", "left"), ("C-q", "back")]
+        vec![
+            (help_key, "help"),
+            (focus_key.clone(), "left"),
+            (close_key, "back"),
+        ]
+    };
+    let focused_hints = to_hint_refs(&hints_owned);
+    let unfocused_owned = [(focus_key, "focus")];
+    let unfocused_hints = to_hint_refs(&unfocused_owned);
+    let hints = if focused {
+        &focused_hints
+    } else {
+        &unfocused_hints
     };
 
     let t = &app.theme;
@@ -412,7 +452,7 @@ fn render_agent_status_bar(
         },
         hints: t.title_hints,
     };
-    render_badge_status_bar(frame, area, " AGENT ", &styles, &location, hints, focused);
+    render_badge_status_bar(frame, area, " AGENT ", &styles, &location, hints);
 }
 
 /// Create a centered dialog with border, clearing the background.
@@ -784,8 +824,12 @@ struct StatusBarStyle {
     hints: Style,
 }
 
+/// Convert owned hint pairs to borrowed references.
+fn to_hint_refs<'a>(hints: &'a [(String, &'a str)]) -> Vec<(&'a str, &'a str)> {
+    hints.iter().map(|(k, d)| (k.as_str(), *d)).collect()
+}
+
 /// Generic status bar with badge, location text, and key hints.
-/// When `focused` is false, hints are replaced with just "C-w:focus".
 fn render_badge_status_bar(
     frame: &mut Frame,
     area: Rect,
@@ -793,12 +837,8 @@ fn render_badge_status_bar(
     styles: &StatusBarStyle,
     location: &str,
     hints: &[(&str, &str)],
-    focused: bool,
 ) {
     use ratatui::text::Text;
-
-    let unfocused_hints: &[(&str, &str)] = &[("C-w", "focus")];
-    let hints = if focused { hints } else { unfocused_hints };
 
     let right_str = {
         let s = hints
@@ -848,18 +888,33 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         String::new()
     };
 
+    let kb = &app.key_bindings;
+    let help_key = kb.global.hint_key(GlobalAction::Help);
+    let focus_key = kb.global.hint_key(GlobalAction::FocusToggle);
+    let close_key = kb.diff.hint_key(DiffAction::Close);
+
     let in_split_with_agent = app.has_view(View::Agent);
-    let hints: Vec<(&str, &str)> = if is_editing {
-        vec![("C-s", "confirm"), ("Esc", "cancel")]
+    let hints_owned: Vec<(String, &str)> = if is_editing {
+        vec![
+            ("C-s".to_string(), "confirm"),
+            ("Esc".to_string(), "cancel"),
+        ]
     } else {
-        let mut h = vec![("?", "help")];
+        let mut h = vec![(help_key, "help")];
         if in_split_with_agent {
-            h.push(("C-w", "agent"));
+            h.push((focus_key.clone(), "agent"));
         }
-        h.push(("q", "back"));
+        h.push((close_key, "back"));
         h
     };
-    let hints: &[(&str, &str)] = &hints;
+    let focused_hints = to_hint_refs(&hints_owned);
+    let unfocused_owned = [(focus_key, "focus")];
+    let unfocused_hints = to_hint_refs(&unfocused_owned);
+    let hints = if focused {
+        &focused_hints
+    } else {
+        &unfocused_hints
+    };
 
     let t = &app.theme;
     let styles = StatusBarStyle {
@@ -875,7 +930,7 @@ fn render_diff_status_bar(frame: &mut Frame, area: Rect, app: &App, focused: boo
         },
         hints: t.title_hints,
     };
-    render_badge_status_bar(frame, area, " DIFF ", &styles, &location, hints, focused);
+    render_badge_status_bar(frame, area, " DIFF ", &styles, &location, hints);
 }
 
 fn render_help_dialog(frame: &mut Frame, area: Rect, entries: &[(String, &str)]) {

@@ -48,6 +48,7 @@ list-header = { fg = "245" }
 
 [keys.global]
 focus-toggle = ["Ctrl-W"]
+help = ["Ctrl-G"]
 
 [keys.tasks]
 new-task = ["n"]

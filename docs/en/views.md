@@ -41,7 +41,7 @@ Each task shows:
 | `U`           | Change upstream branch (stopped only)           |
 | `!`           | Delete task (worktree + branch, stopped only)   |
 | `R`           | Refresh commits ahead                           |
-| `?`           | Show help dialog                                |
+| `Ctrl-g`      | Show help dialog                                |
 | `q` / `Q`     | Quit copse                                      |
 
 ### Task Creation Flow
@@ -100,7 +100,7 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 | `S`       | Send all comments to agent (opens preview dialog)     |
 | `Ctrl-s`  | Confirm comment (while editing)                       |
 | `Esc`     | Cancel comment editing                                |
-| `?`       | Show help dialog                                      |
+| `Ctrl-g`  | Show help dialog                                      |
 
 When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`). After pressing `c`, `n`/`N` navigate between commented lines instead.
 
@@ -146,7 +146,7 @@ When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left,
 | `Ctrl-w`  | Switch focus to left pane                 |              |
 | `Ctrl-b`  | Scroll up one page (enter scroll mode)    | cursor left  |
 | `Ctrl-f`  | Scroll down one page (enter scroll mode)  | cursor right |
-| `?`       | Show help dialog                          | forward `?`  |
+| `Ctrl-g`  | Show help dialog                          |              |
 | Any other | Forward to Claude Code                    |              |
 
 #### Scroll mode (builtin backend)

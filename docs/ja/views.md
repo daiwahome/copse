@@ -41,7 +41,7 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 | `U`           | upstream ブランチを変更 (停止中のみ)         |
 | `!`           | タスクを削除 (worktree + branch, 停止中のみ) |
 | `R`           | commits ahead を更新                         |
-| `?`           | ヘルプダイアログを表示                       |
+| `Ctrl-g`      | ヘルプダイアログを表示                       |
 | `q` / `Q`     | copse を終了                                 |
 
 ### タスク作成フロー
@@ -100,7 +100,7 @@ Agent も開いている場合、レイアウトは `[Diff | Agent]` になる: 
 | `S`       | 全コメントを agent に送信 (プレビューダイアログ)     |
 | `Ctrl-s`  | コメントを確定 (編集中)                              |
 | `Esc`     | コメント編集をキャンセル                             |
-| `?`       | ヘルプダイアログを表示                               |
+| `Ctrl-g`  | ヘルプダイアログを表示                               |
 
 検索パターン未設定時、`n`/`N` はハンク移動になる (`@` と同じ)。`c` を押すとコメントモードに切り替わり、`n`/`N` でコメント付き行間を移動する。
 
@@ -146,7 +146,7 @@ Diff も開いている場合、レイアウトは `[Diff | Agent]` になる: �
 | `Ctrl-w` | 左ペインにフォーカス切替                     |              |
 | `Ctrl-b` | 1 ページ上にスクロール (scroll mode に入る)  | cursor left  |
 | `Ctrl-f` | 1 ページ下にスクロール (scroll mode に入る)  | cursor right |
-| `?`      | ヘルプダイアログを表示                       | `?` を転送   |
+| `Ctrl-g` | ヘルプダイアログを表示                       |              |
 | その他   | Claude Code に転送                           |              |
 
 #### Scroll mode (builtin backend)

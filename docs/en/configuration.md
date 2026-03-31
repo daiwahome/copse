@@ -21,6 +21,7 @@ backend = "builtin"
 diff_filter = "none"
 auto_commit = false
 auto_permissions = false
+# notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
 
 [claudecode]
 permission_mode = "default"
@@ -91,13 +92,14 @@ page-down = ["Ctrl-F"]
 
 ## Options
 
-| Option             | Type   | Default        | Description                                   |
-| ------------------ | ------ | -------------- | --------------------------------------------- |
-| `agent`            | string | `"claudecode"` | Agent to use: `"claudecode"`                  |
-| `backend`          | string | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`      |
-| `diff_filter`      | string | `"none"`       | Diff colorizer: `"none"` or `"delta"`         |
-| `auto_commit`      | bool   | `false`        | Auto-commit changes after each agent response |
-| `auto_permissions` | bool   | `false`        | Auto-approve safe commands in the agent       |
+| Option                 | Type            | Default        | Description                                             |
+| ---------------------- | --------------- | -------------- | ------------------------------------------------------- |
+| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"`                            |
+| `backend`              | string          | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`                |
+| `diff_filter`          | string          | `"none"`       | Diff colorizer: `"none"` or `"delta"`                   |
+| `auto_commit`          | bool            | `false`        | Auto-commit changes after each agent response           |
+| `auto_permissions`     | bool            | `false`        | Auto-approve safe commands in the agent                 |
+| `notification_command` | string (option) | —              | Command to run when the agent is waiting for user input |
 
 ### `[claudecode]` Section
 
@@ -259,6 +261,40 @@ When `auto_permissions` is enabled, copse pre-approves the following safe comman
 | Built-in tools  | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write` |
 
 Build tools (e.g. `cargo`, `npm`) are intentionally excluded as they can execute arbitrary code.
+
+## Notification Command
+
+When set, copse installs a Claude Code [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks) in each worktree. The hook runs the specified command whenever Claude Code is waiting for user input.
+
+Omit the key entirely to disable notifications. Setting `notification_command = ""` is a validation error.
+
+### Example: macOS Native Notification
+
+```toml
+notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
+```
+
+### Example: Terminal Bell
+
+```toml
+notification_command = "printf '\\a'"
+```
+
+### Example: Both
+
+```toml
+notification_command = "printf '\\a' && osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
+```
+
+### Terminal Bell Tips
+
+When using `printf '\a'` as the notification command, the terminal emulator receives a bell character. Most terminals can be configured to:
+
+- **Bounce the Dock icon** (macOS Terminal, iTerm2)
+- **Flash the taskbar** (Windows Terminal)
+- **Show a visual indicator** (many Linux terminals)
+
+Check your terminal's notification/bell settings for the desired behavior.
 
 ## Settings Merge Strategy
 

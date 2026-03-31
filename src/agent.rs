@@ -68,6 +68,7 @@ impl Agent {
                 repo_root,
                 config.auto_commit,
                 config.auto_permissions,
+                config.notification_command.as_deref(),
             ),
         }
     }
@@ -105,11 +106,12 @@ fn setup_claude_code_worktree(
     repo_root: &Path,
     auto_commit: bool,
     auto_permissions: bool,
+    notification_command: Option<&str>,
 ) -> anyhow::Result<()> {
     let parent_settings_path = repo_root.join(".claude").join("settings.local.json");
     let has_parent = parent_settings_path.exists();
 
-    if !auto_commit && !auto_permissions && !has_parent {
+    if !auto_commit && !auto_permissions && notification_command.is_none() && !has_parent {
         return Ok(());
     }
 
@@ -145,6 +147,20 @@ fn setup_claude_code_worktree(
                 &serde_json::json!({ "permissions": permissions.clone() }),
             );
         }
+    }
+    if let Some(cmd) = notification_command {
+        let notification_hook = serde_json::json!({
+            "hooks": {
+                "Notification": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "type": "command",
+                        "command": cmd
+                    }]
+                }]
+            }
+        });
+        merge_settings(&mut settings, &notification_hook);
     }
 
     std::fs::write(
@@ -492,7 +508,7 @@ mod tests {
             "permissions": {"allow": ["Bash(cargo *)"]}
         }));
 
-        setup_claude_code_worktree(&f.wt, &f.repo, false, false).unwrap();
+        setup_claude_code_worktree(&f.wt, &f.repo, false, false, None).unwrap();
 
         let result = f.read_worktree_settings();
         assert!(result["permissions"]["allow"]
@@ -508,7 +524,7 @@ mod tests {
             "permissions": {"allow": ["Bash(cargo *)"]}
         }));
 
-        setup_claude_code_worktree(&f.wt, &f.repo, false, true).unwrap();
+        setup_claude_code_worktree(&f.wt, &f.repo, false, true, None).unwrap();
 
         let allow = f.read_worktree_settings()["permissions"]["allow"]
             .as_array()
@@ -522,7 +538,7 @@ mod tests {
     fn no_parent_no_flags_does_nothing() {
         let f = WorktreeFixture::new();
 
-        setup_claude_code_worktree(&f.wt, &f.repo, false, false).unwrap();
+        setup_claude_code_worktree(&f.wt, &f.repo, false, false, None).unwrap();
 
         assert!(!f.wt.join(".claude/settings.local.json").exists());
     }
@@ -531,10 +547,22 @@ mod tests {
     fn no_parent_with_flags_uses_template() {
         let f = WorktreeFixture::new();
 
-        setup_claude_code_worktree(&f.wt, &f.repo, true, true).unwrap();
+        setup_claude_code_worktree(&f.wt, &f.repo, true, true, None).unwrap();
 
         let result = f.read_worktree_settings();
         assert!(result.get("hooks").is_some());
         assert!(result.get("permissions").is_some());
+    }
+
+    #[test]
+    fn notification_command_adds_hook() {
+        let f = WorktreeFixture::new();
+
+        setup_claude_code_worktree(&f.wt, &f.repo, false, false, Some("printf '\\a'")).unwrap();
+
+        let result = f.read_worktree_settings();
+        let hooks = result["hooks"]["Notification"].as_array().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0]["hooks"][0]["command"], "printf '\\a'");
     }
 }

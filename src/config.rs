@@ -96,9 +96,22 @@ pub struct Config {
     pub color: ColorConfig,
     #[serde(default)]
     pub keys: RawKeyBindings,
+    #[serde(default)]
+    pub notification_command: Option<String>,
 }
 
 impl Config {
+    pub fn validate_notification_command(&self) -> anyhow::Result<()> {
+        if let Some(ref cmd) = self.notification_command {
+            if cmd.is_empty() {
+                anyhow::bail!(
+                    "notification_command must not be empty; remove the key to disable it"
+                );
+            }
+        }
+        Ok(())
+    }
+
     pub fn load() -> anyhow::Result<Self> {
         let path = config_path()?;
         if !path.exists() {
@@ -140,11 +153,13 @@ impl Config {
         out.push_str(&format!("diff_filter = \"{}\"\n", self.diff_filter));
         out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
         out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
+        out.push_str("# notification_command = \"osascript -e 'display notification \\\"Needs input\\\" with title \\\"Copse\\\"'\"\n");
         out.push_str("\n[claudecode]\n");
         out.push_str(&format!(
             "permission_mode = \"{}\"\n",
             self.claude_code.permission_mode
         ));
+
         out.push_str("\n[color]\n");
 
         let entries: &[(&str, &ColorEntry)] = &[

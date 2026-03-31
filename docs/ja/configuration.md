@@ -21,6 +21,7 @@ backend = "builtin"
 diff_filter = "none"
 auto_commit = false
 auto_permissions = false
+# notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
 
 [claudecode]
 permission_mode = "default"
@@ -91,13 +92,14 @@ page-down = ["Ctrl-F"]
 
 ## オプション
 
-| オプション         | 型     | デフォルト     | 説明                                              |
-| ------------------ | ------ | -------------- | ------------------------------------------------- |
-| `agent`            | string | `"claudecode"` | 使用するエージェント: `"claudecode"`              |
-| `backend`          | string | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"` |
-| `diff_filter`      | string | `"none"`       | Diff の着色方法: `"none"` または `"delta"`        |
-| `auto_commit`      | bool   | `false`        | エージェントの応答ごとに変更を自動コミット        |
-| `auto_permissions` | bool   | `false`        | 安全なコマンドをエージェントで自動承認            |
+| オプション             | 型              | デフォルト     | 説明                                               |
+| ---------------------- | --------------- | -------------- | -------------------------------------------------- |
+| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"`               |
+| `backend`              | string          | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"`  |
+| `diff_filter`          | string          | `"none"`       | Diff の着色方法: `"none"` または `"delta"`         |
+| `auto_commit`          | bool            | `false`        | エージェントの応答ごとに変更を自動コミット         |
+| `auto_permissions`     | bool            | `false`        | 安全なコマンドをエージェントで自動承認             |
+| `notification_command` | string (省略可) | —              | エージェントが入力待ちになった時に実行するコマンド |
 
 ### `[claudecode]` セクション
 
@@ -259,6 +261,40 @@ Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュさ
 | 組み込みツール   | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write` |
 
 ビルドツール (例: `cargo`, `npm`) は任意のコードを実行できるため、意図的に除外している。
+
+## Notification Command
+
+設定すると、copse は各 worktree に Claude Code の [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks) をインストールする。Claude Code がユーザの入力待ちになった時にコマンドが実行される。
+
+キーを省略すると通知は無効になる。`notification_command = ""` はバリデーションエラーになる。
+
+### 設定例: macOS ネイティブ通知
+
+```toml
+notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
+```
+
+### 設定例: ターミナルベル
+
+```toml
+notification_command = "printf '\\a'"
+```
+
+### 設定例: 両方
+
+```toml
+notification_command = "printf '\\a' && osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
+```
+
+### ターミナルベルについて
+
+`printf '\a'` をコマンドに使う場合、ターミナルエミュレータにベル文字が送信される。多くのターミナルで以下の設定が可能:
+
+- **Dock アイコンのバウンス** (macOS Terminal, iTerm2)
+- **タスクバーの点滅** (Windows Terminal)
+- **視覚的インジケーター** (多くの Linux ターミナル)
+
+望む動作に応じてターミナルの通知・ベル設定を確認すること。
 
 ## 設定のマージ戦略
 

@@ -75,8 +75,8 @@ pub struct Task {
     _reader_task: Option<JoinHandle<()>>,
     /// MasterPty used for resize operations. None while Stopped.
     master: Option<Box<dyn MasterPty + Send>>,
-    /// Handle used to kill the child process. None while Stopped.
-    killer: Option<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
+    /// PTY child process handle (e.g. `tmux attach-session`). None while Stopped.
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
 }
 
 impl Task {
@@ -449,7 +449,7 @@ impl Task {
             writer: None,
             _reader_task: None,
             master: None,
-            killer: None,
+            child: None,
         }
     }
 
@@ -493,7 +493,7 @@ impl Task {
             writer: None,
             _reader_task: None,
             master: None,
-            killer: None,
+            child: None,
         }
     }
 
@@ -569,8 +569,6 @@ impl Task {
 
         let writer = pair.master.take_writer()?;
         let mut reader = pair.master.try_clone_reader()?;
-        // Obtain a ChildKiller for later termination
-        let killer = child.clone_killer();
 
         let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN)));
         let parser_clone = Arc::clone(&parser);
@@ -627,7 +625,7 @@ impl Task {
             writer: Some(writer),
             _reader_task: Some(reader_task),
             master: Some(pair.master),
-            killer: Some(killer),
+            child: Some(child),
         })
     }
 
@@ -860,24 +858,63 @@ impl Task {
     /// Kills the PTY child (e.g. `tmux attach-session`) so the reader task
     /// gets EOF and exits cleanly. This does NOT kill the backend session.
     pub fn detach(&mut self) {
-        if let Some(killer) = &mut self.killer {
-            let _ = killer.kill();
-        }
+        self.kill_and_reap_child();
         self.writer = None;
         self._reader_task = None;
         self.master = None;
-        self.killer = None;
     }
 
     /// Forcibly terminate the task
     pub fn kill(&mut self) -> anyhow::Result<()> {
         self.backend.kill_session(self.session_id.as_deref());
-        if let Some(killer) = &mut self.killer {
-            killer
-                .kill()
-                .map_err(|e| anyhow::anyhow!("kill failed: {e}"))?;
-        }
+        self.kill_and_reap_child();
         Ok(())
+    }
+
+    /// Kill the PTY child process and wait for it to exit.
+    ///
+    /// This MUST be called before the writer is dropped.
+    /// `UnixMasterWriter::Drop` sends `\n` + EOF to the PTY; if the child
+    /// (e.g. `tmux attach-session`) is still alive, it would forward that
+    /// `\n` to the pane as spurious input.
+    ///
+    /// Uses `try_wait` with a timeout to avoid blocking indefinitely,
+    /// falling back to SIGKILL if SIGHUP doesn't terminate the child in time.
+    fn kill_and_reap_child(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+        let _ = child.kill(); // sends SIGHUP
+
+        // Poll for exit with a timeout; fall back to SIGKILL if needed.
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if start.elapsed() < TIMEOUT => {
+                    std::thread::sleep(POLL_INTERVAL);
+                }
+                _ => {
+                    // Timed out or error — force kill with SIGKILL.
+                    if let Some(pid) = child.process_id() {
+                        let _ = nix::sys::signal::kill(
+                            nix::unistd::Pid::from_raw(pid as i32),
+                            nix::sys::signal::Signal::SIGKILL,
+                        );
+                    }
+                    let _ = child.wait();
+                    break;
+                }
+            }
+        }
+    }
+}
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        self.kill_and_reap_child();
     }
 }
 

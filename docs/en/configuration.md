@@ -21,6 +21,7 @@ backend = "builtin"
 diff_filter = "none"
 auto_commit = false
 auto_permissions = false
+log_level = "info"
 # notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
 
 [claudecode]
@@ -101,14 +102,15 @@ exit-scroll-mode = ["q", "Enter"]
 
 ## Options
 
-| Option                 | Type            | Default        | Description                                             |
-| ---------------------- | --------------- | -------------- | ------------------------------------------------------- |
-| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"`                            |
-| `backend`              | string          | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`                |
-| `diff_filter`          | string          | `"none"`       | Diff colorizer: `"none"` or `"delta"`                   |
-| `auto_commit`          | bool            | `false`        | Auto-commit changes after each agent response           |
-| `auto_permissions`     | bool            | `false`        | Auto-approve safe commands in the agent                 |
-| `notification_command` | string (option) | —              | Command to run when the agent is waiting for user input |
+| Option                 | Type            | Default        | Description                                                             |
+| ---------------------- | --------------- | -------------- | ----------------------------------------------------------------------- |
+| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"`                                            |
+| `backend`              | string          | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`                                |
+| `diff_filter`          | string          | `"none"`       | Diff colorizer: `"none"` or `"delta"`                                   |
+| `auto_commit`          | bool            | `false`        | Auto-commit changes after each agent response                           |
+| `auto_permissions`     | bool            | `false`        | Auto-approve safe commands in the agent                                 |
+| `log_level`            | string          | `"info"`       | Log level: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"` |
+| `notification_command` | string (option) | —              | Command to run when the agent is waiting for user input                 |
 
 ### `[claudecode]` Section
 
@@ -278,6 +280,31 @@ Additionally, reading sensitive files is denied by default:
 | Secrets files      | `**/.env`, `**/.env.*`, `**/*.pem`, `**/*.key`                    |
 | Shell history      | `~/.bash_history`, `~/.zsh_history`                               |
 | Auth configs       | `~/.netrc`, `~/.docker/config.json`, `~/.kube/config`, `~/.npmrc` |
+
+## Logging
+
+copse writes logs to `~/.local/state/copse/copse.log` (XDG state directory). Since copse is a TUI application, logs cannot be printed to stdout/stderr — they are written to the log file instead.
+
+The log level is determined by (in priority order):
+
+1. `COPSE_LOG` environment variable
+2. `log_level` field in config
+3. Default: `info`
+
+| Level   | Description                                |
+| ------- | ------------------------------------------ |
+| `trace` | Very detailed internal state               |
+| `debug` | Diagnostic information for troubleshooting |
+| `info`  | General operational messages (default)     |
+| `warn`  | Potential issues                           |
+| `error` | Errors that affect functionality           |
+| `off`   | Disable logging entirely                   |
+
+To temporarily change the log level without editing the config:
+
+```sh
+COPSE_LOG=debug copse
+```
 
 ## Notification Command
 

@@ -6,6 +6,7 @@ mod diff;
 mod diff_filter;
 mod event;
 mod keybind;
+mod logging;
 mod task;
 mod theme;
 mod tui;
@@ -49,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
     let repo_root = find_repo_root()?;
     let worktree_base_dir = task::worktree_base_dir(&repo_root)?;
     let config = config::Config::load()?;
+
+    logging::init(&config.log_level)?;
+    log::info!("Repository root: {}", repo_root.display());
 
     config.agent.validate()?;
     config.backend.validate()?;

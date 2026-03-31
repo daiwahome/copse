@@ -237,11 +237,8 @@ impl App {
     pub fn handle_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
         match event {
             AppEvent::Key(key) => self.handle_key(key)?,
-            AppEvent::TaskOutput(id) => {
-                // Parser already updated; mark dirty for deferred status refresh.
-                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
-                    task.waiting_status_dirty = true;
-                }
+            AppEvent::TaskOutput(_id) => {
+                // Parser already updated; waiting status is refreshed each draw cycle.
             }
             AppEvent::TaskCreated(task) => {
                 // New task added as Stopped — worktree created on first launch
@@ -269,9 +266,6 @@ impl App {
             },
             AppEvent::TaskExited(id) => {
                 if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
-                    task.waiting_status_dirty = false;
-                    task.last_enter_at = None;
-                    task.first_waiting_at = None;
                     task.commits_ahead = task
                         .upstream
                         .as_ref()
@@ -416,19 +410,11 @@ impl App {
         Ok(())
     }
 
-    /// Refresh cached waiting status for tasks marked dirty.
-    /// Called once before each draw to avoid redundant PTY scans.
+    /// Re-scan PTY screens and update waiting status for all running tasks.
+    /// Called once before each draw.
     pub fn flush_waiting_status(&mut self) {
-        for task in &mut self.tasks {
-            // Also recheck when the grace-period timer has expired, so fast responses
-            // (echo + response in one PTY batch, PTY now quiet) eventually flip to waiting.
-            let timer_expired = task
-                .last_enter_at
-                .is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(300));
-            if task.waiting_status_dirty || timer_expired {
-                task.update_waiting_status();
-                task.waiting_status_dirty = false;
-            }
+        for task in self.tasks.iter_mut().filter(|t| t.is_running()) {
+            task.update_waiting_status();
         }
     }
 
@@ -552,13 +538,11 @@ impl App {
                 let upstream = branches[selected].clone();
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
                 let content_rows = rows.saturating_sub(1);
-                let agent = self.config.agent.clone();
                 let backend = self.config.backend.clone();
                 let task = Task::new_stopped(
                     name,
                     upstream,
                     &self.worktree_base_dir,
-                    agent,
                     backend,
                     content_rows,
                     cols,

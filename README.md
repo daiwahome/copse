@@ -36,6 +36,7 @@ upstream branch (e.g. feature-x)
 ### Optional
 
 - [delta](https://github.com/dandavison/delta) — When installed, the diff view uses delta for syntax highlighting and word-level emphasis. Without delta, diffs are shown with plain tig-style coloring.
+- [tmux](https://github.com/tmux/tmux) (3.0+) — When configured as the backend (`backend = "tmux"` in config), Claude Code processes run inside tmux sessions and continue running after copse exits. Without tmux, the built-in backend is used and processes are killed on exit. See [Configuration](docs/en/configuration.md#backend) for details.
 
 ### Recommended Terminals
 

@@ -21,6 +21,7 @@ backend = "builtin"
 diff_filter = "none"
 auto_commit = false
 auto_permissions = false
+log_level = "info"
 # notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
 
 [claudecode]
@@ -101,14 +102,15 @@ exit-scroll-mode = ["q", "Enter"]
 
 ## オプション
 
-| オプション             | 型              | デフォルト     | 説明                                               |
-| ---------------------- | --------------- | -------------- | -------------------------------------------------- |
-| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"`               |
-| `backend`              | string          | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"`  |
-| `diff_filter`          | string          | `"none"`       | Diff の着色方法: `"none"` または `"delta"`         |
-| `auto_commit`          | bool            | `false`        | エージェントの応答ごとに変更を自動コミット         |
-| `auto_permissions`     | bool            | `false`        | 安全なコマンドをエージェントで自動承認             |
-| `notification_command` | string (省略可) | —              | エージェントが入力待ちになった時に実行するコマンド |
+| オプション             | 型              | デフォルト     | 説明                                                                     |
+| ---------------------- | --------------- | -------------- | ------------------------------------------------------------------------ |
+| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"`                                     |
+| `backend`              | string          | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"`                        |
+| `diff_filter`          | string          | `"none"`       | Diff の着色方法: `"none"` または `"delta"`                               |
+| `auto_commit`          | bool            | `false`        | エージェントの応答ごとに変更を自動コミット                               |
+| `auto_permissions`     | bool            | `false`        | 安全なコマンドをエージェントで自動承認                                   |
+| `log_level`            | string          | `"info"`       | ログレベル: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"` |
+| `notification_command` | string (省略可) | —              | エージェントが入力待ちになった時に実行するコマンド                       |
 
 ### `[claudecode]` セクション
 
@@ -278,6 +280,31 @@ Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュさ
 | シークレットファイル | `**/.env`, `**/.env.*`, `**/*.pem`, `**/*.key`                    |
 | シェル履歴           | `~/.bash_history`, `~/.zsh_history`                               |
 | 認証設定             | `~/.netrc`, `~/.docker/config.json`, `~/.kube/config`, `~/.npmrc` |
+
+## ロギング
+
+copse は `~/.local/state/copse/copse.log` (XDG state directory) にログを出力する。TUI アプリケーションのため stdout/stderr への出力はできず、ログファイルに書き込む。
+
+ログレベルは以下の優先順位で決定される:
+
+1. `COPSE_LOG` 環境変数
+2. 設定の `log_level` フィールド
+3. デフォルト: `info`
+
+| レベル  | 説明                           |
+| ------- | ------------------------------ |
+| `trace` | 非常に詳細な内部状態           |
+| `debug` | トラブルシューティング用の情報 |
+| `info`  | 一般的な動作メッセージ (既定)  |
+| `warn`  | 潜在的な問題                   |
+| `error` | 機能に影響するエラー           |
+| `off`   | ロギングを完全に無効化         |
+
+設定を編集せずに一時的にログレベルを変更するには:
+
+```sh
+COPSE_LOG=debug copse
+```
 
 ## Notification Command
 

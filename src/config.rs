@@ -40,6 +40,31 @@ fn default_permission_mode() -> String {
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    #[default]
+    Info,
+    Warn,
+    Error,
+    Off,
+}
+
+impl std::fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogLevel::Trace => write!(f, "trace"),
+            LogLevel::Debug => write!(f, "debug"),
+            LogLevel::Info => write!(f, "info"),
+            LogLevel::Warn => write!(f, "warn"),
+            LogLevel::Error => write!(f, "error"),
+            LogLevel::Off => write!(f, "off"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Backend {
     #[default]
     BuiltIn,
@@ -90,6 +115,8 @@ pub struct Config {
     pub auto_commit: bool,
     #[serde(default)]
     pub auto_permissions: bool,
+    #[serde(default)]
+    pub log_level: LogLevel,
     #[serde(default, rename = "claudecode")]
     pub claude_code: ClaudeCodeConfig,
     #[serde(default)]
@@ -153,6 +180,7 @@ impl Config {
         out.push_str(&format!("diff_filter = \"{}\"\n", self.diff_filter));
         out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
         out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
+        out.push_str(&format!("log_level = \"{}\"\n", self.log_level));
         out.push_str("# notification_command = \"osascript -e 'display notification \\\"Needs input\\\" with title \\\"Copse\\\"'\"\n");
         out.push_str("\n[claudecode]\n");
         out.push_str(&format!(

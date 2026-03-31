@@ -283,7 +283,7 @@ Additionally, reading sensitive files is denied by default:
 
 ## Logging
 
-copse writes logs to `~/.local/state/copse/copse.log` (XDG state directory). Since copse is a TUI application, logs cannot be printed to stdout/stderr — they are written to the log file instead.
+copse writes logs to `~/.local/state/copse/copse-<TIMESTAMP>.log` (XDG state directory), creating a new file on each startup. Since copse is a TUI application, logs cannot be printed to stdout/stderr — they are written to the log file instead. Old log files are automatically cleaned up, keeping the most recent 10.
 
 The log level is determined by (in priority order):
 

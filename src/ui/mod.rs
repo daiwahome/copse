@@ -845,7 +845,7 @@ fn render_badge_status_bar(
             .iter()
             .map(|(k, d)| format!("{k}:{d}"))
             .collect::<Vec<_>>()
-            .join("  ");
+            .join(" ");
         format!("{s} ")
     };
 

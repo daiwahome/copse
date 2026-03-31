@@ -107,12 +107,15 @@ impl KeyBind {
         }
     }
 
-    /// Format a `KeyBind` back into a human-readable string (inverse of `parse`).
+    /// Format a `KeyBind` back into a human-readable string.
+    ///
+    /// Note: Ctrl combos are rendered as `"C-x"` (short form) rather than `"Ctrl-x"`,
+    /// so the output is not necessarily accepted by [`Self::parse`].
     pub fn display(&self) -> String {
         let base = match self.code {
             KeyCode::Char(c) => {
                 if self.modifiers.contains(KeyModifiers::CONTROL) {
-                    return format!("Ctrl-{c}");
+                    return format!("C-{c}");
                 }
                 if c == ' ' {
                     return "Space".to_string();
@@ -642,14 +645,14 @@ mod tests {
 
     #[test]
     fn display_parse_round_trip() {
+        // Ctrl keys are excluded: display() emits "C-x" but parse() accepts "Ctrl-x",
+        // so the round-trip is intentionally asymmetric.
         let cases = [
             "j",
             "O",
             "!",
             "/",
             "@",
-            "Ctrl-o",
-            "Ctrl-w",
             "Enter",
             "Esc",
             "Up",
@@ -677,6 +680,14 @@ mod tests {
                 "round-trip failed: {input:?} -> display {displayed:?} -> parse {:?} (expected {:?})",
                 kb2, kb
             );
+        }
+    }
+
+    #[test]
+    fn ctrl_display_uses_short_form() {
+        for c in ['o', 'w', 'g', 'k', 'q', 'a'] {
+            let kb = KeyBind::parse(&format!("Ctrl-{}", c.to_ascii_uppercase())).unwrap();
+            assert_eq!(kb.display(), format!("C-{c}"));
         }
     }
 }

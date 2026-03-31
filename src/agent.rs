@@ -55,10 +55,17 @@ impl Agent {
     }
 
     /// Write agent-specific configuration files into the worktree.
-    pub fn setup_worktree(&self, worktree_path: &Path, config: &Config) -> anyhow::Result<()> {
+    /// Also inherits settings from the parent repository's `.claude/settings.local.json`.
+    pub fn setup_worktree(
+        &self,
+        worktree_path: &Path,
+        repo_root: &Path,
+        config: &Config,
+    ) -> anyhow::Result<()> {
         match self {
             Agent::ClaudeCode => setup_claude_code_worktree(
                 worktree_path,
+                repo_root,
                 config.auto_commit,
                 config.auto_permissions,
             ),
@@ -95,10 +102,14 @@ fn is_claude_available() -> bool {
 
 fn setup_claude_code_worktree(
     worktree_path: &Path,
+    repo_root: &Path,
     auto_commit: bool,
     auto_permissions: bool,
 ) -> anyhow::Result<()> {
-    if !auto_commit && !auto_permissions {
+    let parent_settings_path = repo_root.join(".claude").join("settings.local.json");
+    let has_parent = parent_settings_path.exists();
+
+    if !auto_commit && !auto_permissions && !has_parent {
         return Ok(());
     }
 
@@ -107,30 +118,32 @@ fn setup_claude_code_worktree(
 
     let settings_path = claude_dir.join("settings.local.json");
 
-    let template: serde_json::Value =
-        serde_json::from_str(include_str!("templates/settings.local.json"))?;
-
-    let mut settings = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path)?;
+    // Layer 1 (lowest priority): parent repository settings
+    let mut settings = if has_parent {
+        let content = std::fs::read_to_string(&parent_settings_path)?;
         serde_json::from_str::<serde_json::Value>(&content)
             .unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
     };
 
-    // Merge template keys into existing settings (existing keys take priority)
-    if let (Some(target), Some(source)) = (settings.as_object_mut(), template.as_object()) {
-        if auto_commit {
-            if let Some(hooks) = source.get("hooks") {
-                target.entry("hooks").or_insert_with(|| hooks.clone());
-            }
+    // Layer 2: copse template (controlled by auto_commit / auto_permissions flags)
+    let template: serde_json::Value =
+        serde_json::from_str(include_str!("templates/settings.local.json"))?;
+    if auto_commit {
+        if let Some(hooks) = template.get("hooks") {
+            merge_settings(
+                &mut settings,
+                &serde_json::json!({ "hooks": hooks.clone() }),
+            );
         }
-        if auto_permissions {
-            if let Some(permissions) = source.get("permissions") {
-                target
-                    .entry("permissions")
-                    .or_insert_with(|| permissions.clone());
-            }
+    }
+    if auto_permissions {
+        if let Some(permissions) = template.get("permissions") {
+            merge_settings(
+                &mut settings,
+                &serde_json::json!({ "permissions": permissions.clone() }),
+            );
         }
     }
 
@@ -140,6 +153,38 @@ fn setup_claude_code_worktree(
     )?;
 
     Ok(())
+}
+
+/// Deep-merge `overlay` into `base`.
+/// - Objects: recurse, overlay keys win for scalars.
+/// - Arrays: concatenate and deduplicate (by value equality).
+/// - Scalars: overlay replaces base.
+/// - Mismatched types (e.g. Object vs Array): overlay replaces base entirely.
+fn merge_settings(base: &mut serde_json::Value, overlay: &serde_json::Value) {
+    match (base.as_object_mut(), overlay.as_object()) {
+        (Some(base_map), Some(overlay_map)) => {
+            for (key, overlay_val) in overlay_map {
+                match base_map.get_mut(key) {
+                    Some(base_val) => merge_settings(base_val, overlay_val),
+                    None => {
+                        base_map.insert(key.clone(), overlay_val.clone());
+                    }
+                }
+            }
+        }
+        _ => match (base.as_array_mut(), overlay.as_array()) {
+            (Some(base_arr), Some(overlay_arr)) => {
+                for item in overlay_arr {
+                    if !base_arr.contains(item) {
+                        base_arr.push(item.clone());
+                    }
+                }
+            }
+            _ => {
+                *base = overlay.clone();
+            }
+        },
+    }
 }
 
 /// Returns true if `line` looks like Claude Code's processing spinner.
@@ -340,5 +385,156 @@ mod tests {
             Agent::ClaudeCode.detect_waiting(&l),
             WaitingDetection::Unknown
         );
+    }
+
+    // -- merge_settings tests --
+
+    #[test]
+    fn merge_scalars_overlay_wins() {
+        let mut base = serde_json::json!({"key": "base"});
+        merge_settings(&mut base, &serde_json::json!({"key": "overlay"}));
+        assert_eq!(base["key"], "overlay");
+    }
+
+    #[test]
+    fn merge_objects_recursively() {
+        let mut base = serde_json::json!({"a": {"x": 1}, "b": 2});
+        merge_settings(&mut base, &serde_json::json!({"a": {"y": 2}, "c": 3}));
+        assert_eq!(
+            base,
+            serde_json::json!({"a": {"x": 1, "y": 2}, "b": 2, "c": 3})
+        );
+    }
+
+    #[test]
+    fn merge_arrays_deduplicates() {
+        let mut base = serde_json::json!(["a", "b"]);
+        merge_settings(&mut base, &serde_json::json!(["b", "c"]));
+        assert_eq!(base, serde_json::json!(["a", "b", "c"]));
+    }
+
+    #[test]
+    fn merge_nested_arrays_in_objects() {
+        let mut base = serde_json::json!({"permissions": {"allow": ["Bash(git *)", "Edit"]}});
+        let overlay = serde_json::json!({"permissions": {"allow": ["Edit", "Bash(cargo *)"]}});
+        merge_settings(&mut base, &overlay);
+        assert_eq!(
+            base,
+            serde_json::json!({"permissions": {"allow": ["Bash(git *)", "Edit", "Bash(cargo *)"]}})
+        );
+    }
+
+    #[test]
+    fn merge_hooks_concatenates_arrays() {
+        let mut base = serde_json::json!({
+            "hooks": {"Stop": [{"type": "command", "command": "echo parent"}]}
+        });
+        let overlay = serde_json::json!({
+            "hooks": {"Stop": [{"type": "command", "command": "echo copse"}]}
+        });
+        merge_settings(&mut base, &overlay);
+        let stop = base["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2);
+    }
+
+    #[test]
+    fn merge_adds_missing_keys() {
+        let mut base = serde_json::json!({});
+        merge_settings(
+            &mut base,
+            &serde_json::json!({"permissions": {"allow": ["Edit"]}}),
+        );
+        assert_eq!(
+            base,
+            serde_json::json!({"permissions": {"allow": ["Edit"]}})
+        );
+    }
+
+    // -- setup_claude_code_worktree tests --
+
+    struct WorktreeFixture {
+        _tmp: tempfile::TempDir,
+        repo: std::path::PathBuf,
+        wt: std::path::PathBuf,
+    }
+
+    impl WorktreeFixture {
+        fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let repo = tmp.path().join("repo");
+            let wt = tmp.path().join("wt");
+            std::fs::create_dir_all(&repo).unwrap();
+            std::fs::create_dir_all(&wt).unwrap();
+            Self {
+                _tmp: tmp,
+                repo,
+                wt,
+            }
+        }
+
+        fn set_parent_settings(&self, value: &serde_json::Value) {
+            let path = self.repo.join(".claude/settings.local.json");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, serde_json::to_string_pretty(value).unwrap()).unwrap();
+        }
+
+        fn read_worktree_settings(&self) -> serde_json::Value {
+            let content =
+                std::fs::read_to_string(self.wt.join(".claude/settings.local.json")).unwrap();
+            serde_json::from_str(&content).unwrap()
+        }
+    }
+
+    #[test]
+    fn inherits_parent_settings() {
+        let f = WorktreeFixture::new();
+        f.set_parent_settings(&serde_json::json!({
+            "permissions": {"allow": ["Bash(cargo *)"]}
+        }));
+
+        setup_claude_code_worktree(&f.wt, &f.repo, false, false).unwrap();
+
+        let result = f.read_worktree_settings();
+        assert!(result["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("Bash(cargo *)")));
+    }
+
+    #[test]
+    fn template_merges_on_top_of_parent() {
+        let f = WorktreeFixture::new();
+        f.set_parent_settings(&serde_json::json!({
+            "permissions": {"allow": ["Bash(cargo *)"]}
+        }));
+
+        setup_claude_code_worktree(&f.wt, &f.repo, false, true).unwrap();
+
+        let allow = f.read_worktree_settings()["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert!(allow.contains(&serde_json::json!("Bash(cargo *)")));
+        assert!(allow.contains(&serde_json::json!("Edit")));
+    }
+
+    #[test]
+    fn no_parent_no_flags_does_nothing() {
+        let f = WorktreeFixture::new();
+
+        setup_claude_code_worktree(&f.wt, &f.repo, false, false).unwrap();
+
+        assert!(!f.wt.join(".claude/settings.local.json").exists());
+    }
+
+    #[test]
+    fn no_parent_with_flags_uses_template() {
+        let f = WorktreeFixture::new();
+
+        setup_claude_code_worktree(&f.wt, &f.repo, true, true).unwrap();
+
+        let result = f.read_worktree_settings();
+        assert!(result.get("hooks").is_some());
+        assert!(result.get("permissions").is_some());
     }
 }

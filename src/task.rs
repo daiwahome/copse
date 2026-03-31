@@ -527,9 +527,12 @@ impl Task {
 
         // Set up agent-specific configuration files in the worktree
         let wp = worktree_path.clone();
+        let rr = repo_root.clone();
         let config_clone = config.clone();
-        tokio::task::spawn_blocking(move || config_clone.agent.setup_worktree(&wp, &config_clone))
-            .await??;
+        tokio::task::spawn_blocking(move || {
+            config_clone.agent.setup_worktree(&wp, &rr, &config_clone)
+        })
+        .await??;
 
         let agent = config.agent.clone();
         let backend = config.backend.clone();

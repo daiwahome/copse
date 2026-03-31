@@ -24,3 +24,6 @@ serde_json = "1"
 toml = "0.9"
 ansi-to-tui = "8"
 unicode-width = "0.2"
+
+[dev-dependencies]
+tempfile = "3.27.0"

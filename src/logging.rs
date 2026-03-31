@@ -1,11 +1,14 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use etcetera::BaseStrategy;
 use log::LevelFilter;
 use simplelog::{ConfigBuilder, WriteLogger};
+use time::OffsetDateTime;
 
 use crate::config::LogLevel;
+
+const MAX_LOG_FILES: usize = 10;
 
 fn log_dir() -> anyhow::Result<PathBuf> {
     let strategy = etcetera::base_strategy::Xdg::new()
@@ -37,6 +40,47 @@ fn parse_env_level(s: &str) -> Option<LevelFilter> {
     }
 }
 
+fn generate_log_filename() -> String {
+    let now = OffsetDateTime::now_utc();
+    format!(
+        "copse-{:04}-{:02}-{:02}T{:02}-{:02}-{:02}.log",
+        now.year(),
+        now.month() as u8,
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second(),
+    )
+}
+
+fn cleanup_old_logs(dir: &Path, max_files: usize) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    let mut log_files: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "log")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.starts_with("copse-"))
+        })
+        .collect();
+
+    log_files.sort();
+
+    if log_files.len() > max_files {
+        let to_remove = log_files.len() - max_files;
+        for path in &log_files[..to_remove] {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 /// Initialize file-based logging.
 ///
 /// Log level is determined by (in priority order):
@@ -44,7 +88,9 @@ fn parse_env_level(s: &str) -> Option<LevelFilter> {
 /// 2. `log_level` field in config
 /// 3. Default: `info`
 ///
-/// Logs are written to `~/.local/state/copse/copse.log`.
+/// Logs are written to `~/.local/state/copse/copse-<TIMESTAMP>.log`
+/// where `<TIMESTAMP>` is a UTC timestamp in `YYYY-MM-DDTHH-MM-SS` format.
+/// On startup, old log files are cleaned up, keeping the most recent 10.
 pub fn init(config_level: &LogLevel) -> anyhow::Result<()> {
     let level = match std::env::var("COPSE_LOG") {
         Ok(v) => parse_env_level(&v).ok_or_else(|| {
@@ -63,7 +109,10 @@ pub fn init(config_level: &LogLevel) -> anyhow::Result<()> {
     fs::create_dir_all(&dir)
         .map_err(|e| anyhow::anyhow!("Failed to create log directory {}: {e}", dir.display()))?;
 
-    let log_path = dir.join("copse.log");
+    // Reserve one slot for the new log file about to be created.
+    cleanup_old_logs(&dir, MAX_LOG_FILES - 1);
+
+    let log_path = dir.join(generate_log_filename());
     let file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -117,5 +166,78 @@ mod tests {
     fn log_dir_ends_with_copse() {
         let dir = log_dir().unwrap();
         assert_eq!(dir.file_name().unwrap(), "copse");
+    }
+
+    #[test]
+    fn generate_log_filename_format() {
+        let name = generate_log_filename();
+        assert!(name.starts_with("copse-"));
+        assert!(name.ends_with(".log"));
+        assert_eq!(name.len(), "copse-2026-03-31T10-30-00.log".len());
+        let timestamp = &name["copse-".len()..name.len() - ".log".len()];
+        assert!(timestamp
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '-' || c == 'T'));
+    }
+
+    #[test]
+    fn cleanup_old_logs_keeps_max_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = [
+            "copse-2026-01-01T00-00-00.log",
+            "copse-2026-01-02T00-00-00.log",
+            "copse-2026-01-03T00-00-00.log",
+            "copse-2026-01-04T00-00-00.log",
+            "copse-2026-01-05T00-00-00.log",
+            "copse-2026-01-06T00-00-00.log",
+            "copse-2026-01-07T00-00-00.log",
+        ];
+        for name in &names {
+            fs::File::create(dir.path().join(name)).unwrap();
+        }
+        fs::File::create(dir.path().join("other.log")).unwrap();
+
+        cleanup_old_logs(dir.path(), 3);
+
+        let mut remaining: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        remaining.sort();
+
+        assert_eq!(remaining.len(), 4);
+        assert!(remaining.contains(&"copse-2026-01-05T00-00-00.log".to_string()));
+        assert!(remaining.contains(&"copse-2026-01-06T00-00-00.log".to_string()));
+        assert!(remaining.contains(&"copse-2026-01-07T00-00-00.log".to_string()));
+        assert!(remaining.contains(&"other.log".to_string()));
+    }
+
+    #[test]
+    fn cleanup_old_logs_no_op_when_under_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = [
+            "copse-2026-01-01T00-00-00.log",
+            "copse-2026-01-02T00-00-00.log",
+        ];
+        for name in &names {
+            fs::File::create(dir.path().join(name)).unwrap();
+        }
+
+        cleanup_old_logs(dir.path(), 5);
+
+        let count = fs::read_dir(dir.path()).unwrap().count();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn cleanup_old_logs_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        cleanup_old_logs(dir.path(), 5);
+    }
+
+    #[test]
+    fn cleanup_old_logs_nonexistent_dir() {
+        cleanup_old_logs(Path::new("/tmp/nonexistent-copse-test-dir"), 5);
     }
 }

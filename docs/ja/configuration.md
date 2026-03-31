@@ -283,7 +283,7 @@ Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュさ
 
 ## ロギング
 
-copse は `~/.local/state/copse/copse.log` (XDG state directory) にログを出力する。TUI アプリケーションのため stdout/stderr への出力はできず、ログファイルに書き込む。
+copse は `~/.local/state/copse/copse-<TIMESTAMP>.log` (XDG state directory) に起動ごとに新しいログファイルを作成する。TUI アプリケーションのため stdout/stderr への出力はできず、ログファイルに書き込む。古いログファイルは自動的に削除され、最新の 10 件が保持される。
 
 ログレベルは以下の優先順位で決定される:
 

@@ -39,6 +39,8 @@ pub enum DiffAction {
     Close,
     PageUp,
     PageDown,
+    HalfPageUp,
+    HalfPageDown,
     AddComment,
     EditComment,
     DeleteComment,
@@ -52,6 +54,11 @@ pub enum AgentAction {
     Close,
     PageUp,
     PageDown,
+    LineUp,
+    LineDown,
+    HalfPageUp,
+    HalfPageDown,
+    ExitScrollMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -297,6 +304,8 @@ fn diff_action_defs() -> &'static [ActionDef<DiffAction>] {
         "close", "Close diff view" => DiffAction::Close, ["q", "Esc", "Ctrl-Q"];
         "page-up", "Page up" => DiffAction::PageUp, ["Ctrl-B"];
         "page-down", "Page down" => DiffAction::PageDown, ["Ctrl-F"];
+        "half-page-up", "Half page up" => DiffAction::HalfPageUp, ["Ctrl-U"];
+        "half-page-down", "Half page down" => DiffAction::HalfPageDown, ["Ctrl-D"];
         "add-comment", "Add comment" => DiffAction::AddComment, ["o"];
         "edit-comment", "Edit comment" => DiffAction::EditComment, ["e"];
         "delete-comment", "Delete comment" => DiffAction::DeleteComment, ["!"];
@@ -309,8 +318,13 @@ fn agent_action_defs() -> &'static [ActionDef<AgentAction>] {
     action_defs! {
         "fullscreen", "Toggle fullscreen" => AgentAction::Fullscreen, ["Ctrl-O"];
         "close", "Close agent view" => AgentAction::Close, ["Ctrl-Q"];
-        "page-up", "Scroll up" => AgentAction::PageUp, ["Ctrl-B"];
-        "page-down", "Scroll down" => AgentAction::PageDown, ["Ctrl-F"];
+        "page-up", "Page up" => AgentAction::PageUp, ["Ctrl-B"];
+        "page-down", "Page down" => AgentAction::PageDown, ["Ctrl-F"];
+        "line-up", "Line up" => AgentAction::LineUp, ["k"];
+        "line-down", "Line down" => AgentAction::LineDown, ["j"];
+        "half-page-up", "Half page up" => AgentAction::HalfPageUp, ["Ctrl-U"];
+        "half-page-down", "Half page down" => AgentAction::HalfPageDown, ["Ctrl-D"];
+        "exit-scroll-mode", "Exit scroll mode" => AgentAction::ExitScrollMode, ["q", "Enter"];
     }
 }
 

@@ -83,6 +83,8 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 | `k` / `↑` | Move cursor up                                        |
 | `Ctrl-b`  | Scroll up one page                                    |
 | `Ctrl-f`  | Scroll down one page                                  |
+| `Ctrl-u`  | Scroll up half page                                   |
+| `Ctrl-d`  | Scroll down half page                                 |
 | `/`       | Open search dialog (enter pattern, `Enter` to search) |
 | `n`       | Next search match                                     |
 | `N`       | Previous search match                                 |
@@ -136,15 +138,46 @@ When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left,
 
 ### Key Bindings (Agent pane, right focus)
 
-| Key       | Action                                           | Overrides    |
-| --------- | ------------------------------------------------ | ------------ |
-| `Ctrl-o`  | Toggle split ↔ fullscreen                        |              |
-| `Ctrl-q`  | Close agent view, return to tasks or diff        |              |
-| `Ctrl-w`  | Switch focus to left pane                        |              |
-| `Ctrl-b`  | Scroll up one page (scrollback)                  | cursor left  |
-| `Ctrl-f`  | Scroll down one page (scrollback)                | cursor right |
-| `?`       | Show help dialog                                 | forward `?`  |
-| Any other | Reset scroll position and forward to Claude Code |              |
+| Key       | Action                                    | Overrides    |
+| --------- | ----------------------------------------- | ------------ |
+| `Ctrl-o`  | Toggle split ↔ fullscreen                 |              |
+| `Ctrl-q`  | Close agent view, return to tasks or diff |              |
+| `Ctrl-w`  | Switch focus to left pane                 |              |
+| `Ctrl-b`  | Scroll up one page (enter scroll mode)    | cursor left  |
+| `Ctrl-f`  | Scroll down one page (enter scroll mode)  | cursor right |
+| `?`       | Show help dialog                          | forward `?`  |
+| Any other | Forward to Claude Code                    |              |
+
+#### Scroll mode (builtin backend)
+
+Activated when scrolled back via `Ctrl-b` / `Ctrl-f`. In scroll mode, keys are not forwarded to the PTY.
+
+| Key           | Action             |
+| ------------- | ------------------ |
+| `k`           | Scroll up 1 line   |
+| `j`           | Scroll down 1 line |
+| `Ctrl-u`      | Half page up       |
+| `Ctrl-d`      | Half page down     |
+| `Ctrl-b`      | Page up            |
+| `Ctrl-f`      | Page down          |
+| `q` / `Enter` | Exit scroll mode   |
+
+#### Copy mode (tmux backend)
+
+When using the tmux backend, `Ctrl-b` / `Ctrl-f` enter tmux copy-mode. Within copy-mode, standard tmux navigation keys are available:
+
+| Key           | Action             |
+| ------------- | ------------------ |
+| `k`           | Scroll up 1 line   |
+| `j`           | Scroll down 1 line |
+| `Ctrl-u`      | Half page up       |
+| `Ctrl-d`      | Half page down     |
+| `Ctrl-b`      | Page up            |
+| `Ctrl-f`      | Page down          |
+| `/`           | Search             |
+| `n`           | Next match         |
+| `N`           | Previous match     |
+| `q` / `Enter` | Exit copy-mode     |
 
 ### Key Bindings (Tasks pane, left focus)
 

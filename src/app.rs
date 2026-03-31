@@ -348,24 +348,45 @@ impl App {
         }
         // Help shortcut – works from any view
         if key.code == KeyCode::Char('?') {
+            use AgentAction::*;
+            let scroll_mode_actions = [LineUp, LineDown, HalfPageUp, HalfPageDown, ExitScrollMode];
             let mut entries = match self.focused_view() {
                 View::Tasks => keybind::tasks_help_entries(&self.key_bindings.tasks),
                 View::Agent => {
-                    let exclude = if self.config.backend.handles_scrollback() {
-                        vec![AgentAction::PageUp, AgentAction::PageDown]
+                    let exclude: Vec<AgentAction> = if self.config.backend.handles_scrollback() {
+                        vec![
+                            PageUp,
+                            PageDown,
+                            LineUp,
+                            LineDown,
+                            HalfPageUp,
+                            HalfPageDown,
+                            ExitScrollMode,
+                        ]
                     } else {
-                        vec![]
+                        scroll_mode_actions.to_vec()
                     };
                     keybind::agent_help_entries(&self.key_bindings.agent, &exclude)
                 }
                 View::Diff => keybind::diff_help_entries(&self.key_bindings.diff),
             };
-            if self.focused_view() == View::Agent && self.config.backend.handles_scrollback() {
-                entries.push(("".to_string(), ""));
-                entries.push(("".to_string(), "Scroll (tmux copy-mode)"));
-                entries.push(("Ctrl-B".to_string(), "Page up (enter copy-mode)"));
-                entries.push(("Ctrl-F".to_string(), "Page down"));
-                entries.push(("q".to_string(), "Exit copy-mode"));
+            if self.focused_view() == View::Agent {
+                if self.config.backend.handles_scrollback() {
+                    entries.push(("".to_string(), ""));
+                    entries.push(("".to_string(), "Scroll (tmux copy-mode)"));
+                    entries.push(("Ctrl-B".to_string(), "Page up (enter copy-mode)"));
+                    entries.push(("Ctrl-F".to_string(), "Page down"));
+                    entries.push(("/".to_string(), "Search"));
+                    entries.push(("n".to_string(), "Next match"));
+                    entries.push(("N".to_string(), "Previous match"));
+                    entries.push(("q / Enter".to_string(), "Exit copy-mode"));
+                } else {
+                    entries.push(("".to_string(), ""));
+                    entries.push(("".to_string(), "Scroll mode (active after scroll)"));
+                    let scroll_entries =
+                        keybind::agent_help_entries(&self.key_bindings.agent, &[Fullscreen, Close]);
+                    entries.extend(scroll_entries);
+                }
             }
             self.dialog = Some(Dialog::Help { entries });
             return Ok(());
@@ -1039,15 +1060,31 @@ impl App {
     }
 
     fn handle_agent_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
+        let handles_scrollback = self
+            .focused_task()
+            .is_some_and(|t| t.backend.handles_scrollback());
+        let in_scroll_mode =
+            !handles_scrollback && self.focused_task().is_some_and(|t| t.scroll_offset > 0);
+
         // When the backend handles scrollback natively (e.g. tmux copy-mode),
-        // let PageUp/PageDown pass through to the PTY instead of handling them here.
+        // let scroll actions pass through to the PTY instead of handling them here.
+        // When in scroll mode (builtin), scroll-only actions are active.
         let action = self.key_bindings.agent.lookup(&key).filter(|a| {
-            if matches!(a, AgentAction::PageUp | AgentAction::PageDown) {
-                !self
-                    .focused_task()
-                    .is_some_and(|t| t.backend.handles_scrollback())
-            } else {
+            if handles_scrollback {
+                // tmux: only allow non-scroll actions (Fullscreen, Close)
+                matches!(a, AgentAction::Fullscreen | AgentAction::Close)
+            } else if in_scroll_mode {
+                // builtin scroll mode: all actions are valid
                 true
+            } else {
+                // builtin normal: only non-scroll-mode actions
+                matches!(
+                    a,
+                    AgentAction::Fullscreen
+                        | AgentAction::Close
+                        | AgentAction::PageUp
+                        | AgentAction::PageDown
+                )
             }
         });
         if let Some(action) = action {
@@ -1059,44 +1096,81 @@ impl App {
                     self.close_agent();
                 }
                 AgentAction::PageUp => {
-                    if let Some(task) = self.focused_task_mut() {
-                        let page = crossterm::terminal::size()
+                    self.agent_scroll_up(
+                        crossterm::terminal::size()
                             .map(|(_, r)| r.saturating_sub(2) as usize)
-                            .unwrap_or(20);
-                        let new_offset = task.scroll_offset.saturating_add(page);
-                        let mut screen = task
-                            .parser
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .screen()
-                            .clone();
-                        screen.set_scrollback(new_offset);
-                        task.scroll_offset = screen.scrollback();
-                    }
+                            .unwrap_or(20),
+                    );
                 }
                 AgentAction::PageDown => {
-                    if let Some(task) = self.focused_task_mut() {
-                        let page = crossterm::terminal::size()
+                    self.agent_scroll_down(
+                        crossterm::terminal::size()
                             .map(|(_, r)| r.saturating_sub(2) as usize)
-                            .unwrap_or(20);
-                        task.scroll_offset = task.scroll_offset.saturating_sub(page);
+                            .unwrap_or(20),
+                    );
+                }
+                AgentAction::LineUp => {
+                    self.agent_scroll_up(1);
+                }
+                AgentAction::LineDown => {
+                    self.agent_scroll_down(1);
+                }
+                AgentAction::HalfPageUp => {
+                    let half = crossterm::terminal::size()
+                        .map(|(_, r)| (r.saturating_sub(2) as usize) / 2)
+                        .unwrap_or(10);
+                    self.agent_scroll_up(half);
+                }
+                AgentAction::HalfPageDown => {
+                    let half = crossterm::terminal::size()
+                        .map(|(_, r)| (r.saturating_sub(2) as usize) / 2)
+                        .unwrap_or(10);
+                    self.agent_scroll_down(half);
+                }
+                AgentAction::ExitScrollMode => {
+                    if let Some(task) = self.focused_task_mut() {
+                        task.scroll_offset = 0;
                     }
                 }
             }
             return Ok(());
         }
 
-        // Everything else: reset scroll and forward to PTY
+        if in_scroll_mode {
+            // In scroll mode, ignore keys that are not scroll actions
+            return Ok(());
+        }
+
+        // Everything else: forward to PTY
         let bytes = key_to_bytes(key);
         if !bytes.is_empty() {
             if let Some(task) = self.focused_task_mut() {
-                task.scroll_offset = 0;
                 if task.is_running() {
                     let _ = task.write_input(&bytes);
                 }
             }
         }
         Ok(())
+    }
+
+    fn agent_scroll_up(&mut self, lines: usize) {
+        if let Some(task) = self.focused_task_mut() {
+            let new_offset = task.scroll_offset.saturating_add(lines);
+            let mut screen = task
+                .parser
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .screen()
+                .clone();
+            screen.set_scrollback(new_offset);
+            task.scroll_offset = screen.scrollback();
+        }
+    }
+
+    fn agent_scroll_down(&mut self, lines: usize) {
+        if let Some(task) = self.focused_task_mut() {
+            task.scroll_offset = task.scroll_offset.saturating_sub(lines);
+        }
     }
 
     fn handle_diff_key(&mut self, key: KeyEvent) -> anyhow::Result<()> {
@@ -1168,6 +1242,18 @@ impl App {
             DiffAction::PageDown => {
                 if let Some(state) = self.diff_state_mut() {
                     state.page_down(page_height);
+                    state.ensure_cursor_visible(page_height);
+                }
+            }
+            DiffAction::HalfPageUp => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.page_up(page_height / 2);
+                    state.ensure_cursor_visible(page_height);
+                }
+            }
+            DiffAction::HalfPageDown => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.page_down(page_height / 2);
                     state.ensure_cursor_visible(page_height);
                 }
             }

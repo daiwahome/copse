@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     config.agent.validate()?;
     config.backend.validate()?;
     config.diff_filter.validate()?;
+    config.validate_notification_command()?;
 
     let agent = config.agent.clone();
     let backend = config.backend.clone();

@@ -180,6 +180,7 @@ impl Config {
             ("diff-context", &self.color.diff_context),
             ("list-highlight", &self.color.list_highlight),
             ("list-highlight-blur", &self.color.list_highlight_blur),
+            ("list-header", &self.color.list_header),
         ];
 
         for (key, entry) in entries {
@@ -280,6 +281,8 @@ pub struct ColorConfig {
         rename = "list-highlight-blur"
     )]
     pub list_highlight_blur: ColorEntry,
+    #[serde(default = "default_list_header", rename = "list-header")]
+    pub list_header: ColorEntry,
 }
 
 impl Default for ColorConfig {
@@ -302,6 +305,7 @@ impl Default for ColorConfig {
             diff_context: default_diff_context(),
             list_highlight: default_list_highlight(),
             list_highlight_blur: default_list_highlight_blur(),
+            list_header: default_list_header(),
         }
     }
 }
@@ -357,4 +361,7 @@ fn default_list_highlight() -> ColorEntry {
 }
 fn default_list_highlight_blur() -> ColorEntry {
     ColorEntry::new().fg("252").bg("234")
+}
+fn default_list_header() -> ColorEntry {
+    ColorEntry::new().fg("245").bold()
 }

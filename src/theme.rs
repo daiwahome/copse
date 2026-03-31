@@ -26,6 +26,7 @@ pub struct Theme {
     // List (task list)
     pub list_highlight: Style,
     pub list_highlight_blur: Style,
+    pub list_header: Style,
 }
 
 impl Theme {
@@ -52,6 +53,7 @@ impl Theme {
             diff_context: convert("diff-context", &cc.diff_context),
             list_highlight: convert("list-highlight", &cc.list_highlight),
             list_highlight_blur: convert("list-highlight-blur", &cc.list_highlight_blur),
+            list_header: convert("list-header", &cc.list_header),
         };
         (theme, warnings)
     }

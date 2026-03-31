@@ -1,25 +1,39 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, ListState},
+    widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
 use crate::{app::App, task::TaskStatus};
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Fill(1)])
+        .split(area);
+    let header_area = chunks[0];
+    let list_area = chunks[1];
+
     // Pre-compute max column widths for alignment
-    let max_name_len = app.tasks.iter().map(|t| t.name.len()).max().unwrap_or(0);
+    let max_name_len = app
+        .tasks
+        .iter()
+        .map(|t| t.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(4); // "Name".len()
     let max_upstream_len = app
         .tasks
         .iter()
         .map(|t| match &t.upstream {
-            Some(u) => "(upstream: )".len() + u.len(),
-            None => "(no upstream)".len(),
+            Some(u) => u.len(),
+            None => 1, // "-"
         })
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(8); // "Upstream".len()
     let max_status_len = 8; // "deleting" is the longest status text
 
     let items: Vec<ListItem> = app
@@ -49,8 +63,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
             };
 
             let upstream_str = match &task.upstream {
-                Some(u) => format!("(upstream: {u})"),
-                None => "(no upstream)".to_string(),
+                Some(u) => u.clone(),
+                None => "-".to_string(),
             };
             let upstream_color = if task.upstream_exists {
                 Color::DarkGray
@@ -98,5 +112,25 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         state.select(Some(app.selected_index));
     }
 
-    frame.render_stateful_widget(list, area, &mut state);
+    // Render header
+    let header_style = app.theme.list_header;
+    let header_line = Line::from(vec![
+        Span::styled("  ", header_style),
+        Span::styled(
+            format!("{:<width$}", "Name", width = max_name_len),
+            header_style,
+        ),
+        Span::styled(
+            format!("  {:<width$}", "Upstream", width = max_upstream_len),
+            header_style,
+        ),
+        Span::styled(
+            format!("  {:<width$}", "Status", width = max_status_len),
+            header_style,
+        ),
+        Span::styled("  Commits", header_style),
+    ]);
+    frame.render_widget(Paragraph::new(header_line), header_area);
+
+    frame.render_stateful_widget(list, list_area, &mut state);
 }

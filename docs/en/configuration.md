@@ -44,6 +44,7 @@ diff-header = { fg = "white" }
 diff-context = { fg = "white" }
 list-highlight = { fg = "166", bg = "234" }
 list-highlight-blur = { fg = "252", bg = "234" }
+list-header = { fg = "245" }
 
 [keys.global]
 focus-toggle = ["Ctrl-W"]
@@ -198,6 +199,7 @@ Available color names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cy
 | `diff-context`        | Diff context lines                 |
 | `list-highlight`      | Task list selected row (focused)   |
 | `list-highlight-blur` | Task list selected row (unfocused) |
+| `list-header`         | Task list header row               |
 
 Invalid color names show a warning in the status bar on startup.
 

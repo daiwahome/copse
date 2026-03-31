@@ -9,7 +9,8 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 use etcetera::BaseStrategy;
 
-use crate::config::{Backend, Config};
+use crate::agent::WaitingDetection;
+use crate::config::{Agent, Backend, Config};
 use crate::event::{AppEvent, TaskId};
 
 const SCROLLBACK_LEN: usize = 10_000;
@@ -62,6 +63,8 @@ pub struct Task {
     pub first_waiting_at: Option<std::time::Instant>,
     /// Scrollback offset for the agent view (0 = live view)
     pub scroll_offset: usize,
+    /// Agent used for this task
+    pub agent: Agent,
     /// Backend used for this task
     pub backend: Backend,
     /// Backend session identifier (e.g. tmux session name). None for BuiltIn.
@@ -133,7 +136,7 @@ impl Task {
         {
             self.last_enter_at = None;
         }
-        match detect_waiting(&lines) {
+        match self.agent.detect_waiting(&lines) {
             WaitingDetection::Waiting => {
                 // Guard: don't flip back to "waiting" within 300 ms of Enter.
                 let grace_expired = self.last_enter_at.is_none();
@@ -322,53 +325,6 @@ impl Task {
         .await?
     }
 
-    /// Write `.claude/settings.local.json` into the worktree based on config.
-    /// Merges template keys into existing settings, preserving user customizations.
-    fn setup_claude_settings(worktree_path: &Path, config: &Config) -> anyhow::Result<()> {
-        if !config.auto_commit && !config.auto_permissions {
-            return Ok(());
-        }
-
-        let claude_dir = worktree_path.join(".claude");
-        std::fs::create_dir_all(&claude_dir)?;
-
-        let settings_path = claude_dir.join("settings.local.json");
-
-        let template: serde_json::Value =
-            serde_json::from_str(include_str!("templates/settings.local.json"))?;
-
-        let mut settings = if settings_path.exists() {
-            let content = std::fs::read_to_string(&settings_path)?;
-            serde_json::from_str::<serde_json::Value>(&content)
-                .unwrap_or_else(|_| serde_json::json!({}))
-        } else {
-            serde_json::json!({})
-        };
-
-        // Merge template keys into existing settings (existing keys take priority)
-        if let (Some(target), Some(source)) = (settings.as_object_mut(), template.as_object()) {
-            if config.auto_commit {
-                if let Some(hooks) = source.get("hooks") {
-                    target.entry("hooks").or_insert_with(|| hooks.clone());
-                }
-            }
-            if config.auto_permissions {
-                if let Some(permissions) = source.get("permissions") {
-                    target
-                        .entry("permissions")
-                        .or_insert_with(|| permissions.clone());
-                }
-            }
-        }
-
-        std::fs::write(
-            &settings_path,
-            serde_json::to_string_pretty(&settings)? + "\n",
-        )?;
-
-        Ok(())
-    }
-
     /// Read the upstream (tracking branch) for a task branch from git.
     pub fn load_upstream(repo_root: &Path, name: &str) -> Option<String> {
         let branch = Self::branch_name(name);
@@ -467,6 +423,7 @@ impl Task {
         name: String,
         upstream: String,
         worktree_base_dir: &Path,
+        agent: Agent,
         backend: Backend,
         rows: u16,
         cols: u16,
@@ -486,6 +443,7 @@ impl Task {
             last_enter_at: None,
             first_waiting_at: None,
             scroll_offset: 0,
+            agent,
             backend,
             session_id: None,
             writer: None,
@@ -501,6 +459,7 @@ impl Task {
         name: String,
         repo_root: &Path,
         worktree_base_dir: &Path,
+        agent: Agent,
         backend: Backend,
         rows: u16,
         cols: u16,
@@ -528,6 +487,7 @@ impl Task {
             last_enter_at: None,
             first_waiting_at: None,
             scroll_offset: 0,
+            agent,
             backend,
             session_id: None,
             writer: None,
@@ -537,8 +497,8 @@ impl Task {
         }
     }
 
-    /// Spawn `claude` in the task's worktree inside a PTY.
-    /// If `has_session` is true, passes `--continue` to resume the last session.
+    /// Spawn the agent in the task's worktree inside a PTY.
+    /// If `has_session` is true, passes session-continuation flags to the agent.
     /// The `id` parameter preserves the task's identity across restarts.
     pub async fn spawn(
         params: SpawnParams,
@@ -556,7 +516,7 @@ impl Task {
             config,
         } = params;
 
-        // Ensure the worktree (and branch) exist before launching claude
+        // Ensure the worktree (and branch) exist before launching the agent
         let worktree_path = Self::ensure_worktree(
             &repo_root,
             &worktree_base_dir,
@@ -565,11 +525,15 @@ impl Task {
         )
         .await?;
 
-        // Set up .claude/settings.local.json based on config
+        // Set up agent-specific configuration files in the worktree
         let wp = worktree_path.clone();
+        let config_clone = config.clone();
+        tokio::task::spawn_blocking(move || config_clone.agent.setup_worktree(&wp, &config_clone))
+            .await??;
+
+        let agent = config.agent.clone();
         let backend = config.backend.clone();
-        let permission_mode = config.permission_mode.clone();
-        tokio::task::spawn_blocking(move || Self::setup_claude_settings(&wp, &config)).await??;
+        let command_args = agent.command_args(has_session, &config);
 
         let session_id = backend.create_session(&crate::backend::SessionParams {
             repo_root: &repo_root,
@@ -577,8 +541,8 @@ impl Task {
             worktree_path: &worktree_path,
             cols,
             rows,
-            has_session,
-            permission_mode: &permission_mode,
+            command_name: agent.command_name(),
+            command_args: &command_args,
         })?;
 
         let pty_system = NativePtySystem::default();
@@ -592,8 +556,8 @@ impl Task {
         let cmd = backend.build_pty_command(
             session_id.as_deref(),
             &worktree_path,
-            has_session,
-            &permission_mode,
+            agent.command_name(),
+            &command_args,
         );
 
         let child = pair.slave.spawn_command(cmd)?;
@@ -654,6 +618,7 @@ impl Task {
             last_enter_at: None,
             first_waiting_at: None,
             scroll_offset: 0,
+            agent,
             backend,
             session_id,
             writer: Some(writer),
@@ -989,171 +954,9 @@ fn parse_remote_url(url: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path_str))
 }
 
-/// Returns true if `line` looks like Claude Code's processing spinner.
-///
-/// Claude Code renders spinner frames as a Unicode dingbat/symbol character
-/// followed by a verb ending in "ing…", e.g. `✢ Simmering…` or `✽ Thinking…`.
-/// These characters fall in the Miscellaneous Symbols (U+2600–U+26FF) and
-/// Dingbats (U+2700–U+27FF) Unicode blocks.
-fn is_spinner_line(line: &str) -> bool {
-    let mut chars = line.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    let in_symbol_block = ('\u{2600}'..='\u{27FF}').contains(&first);
-    if !in_symbol_block {
-        return false;
-    }
-    let rest = chars.as_str().trim();
-    rest.ends_with("ing\u{2026}") || rest.ends_with("ing...")
-}
-
-/// Result of `detect_waiting`: what the PTY screen currently indicates.
-#[derive(Debug, PartialEq)]
-enum WaitingDetection {
-    /// Clear waiting signal: `❯` with cursor on its row, or "esc to cancel".
-    Waiting,
-    /// Clear running signal: spinner line or "esc to interrupt".
-    Running,
-    /// No recognisable indicator (e.g. completion list pushed ❯ out of scan range,
-    /// or blank area between renders). Caller should maintain the current state.
-    Unknown,
-}
-
-/// Pure pattern-matching logic for detecting whether Claude is waiting for input.
-/// Inspects the last few non-empty PTY lines (text + whether the cursor is on that row).
-///
-/// Returns:
-/// - `Running`  — spinner or "esc to interrupt" found
-/// - `Waiting`  — "esc to cancel" or `❯` with cursor found (and no running signal)
-/// - `Unknown`  — neither signal found; caller should keep current state unchanged
-///
-/// The cursor check prevents echoed input (`❯ test` on a row the cursor has
-/// left) from being mis-detected as a waiting prompt after Enter is pressed.
-/// `Unknown` handles the case where a completion list (after typing `/`) pushes
-/// the `❯` row out of the scan window: we neither accept nor reject waiting.
-fn detect_waiting(lines: &[(String, bool)]) -> WaitingDetection {
-    let mut has_waiting_indicator = false;
-    for (line, has_cursor) in lines {
-        let lower = line.to_lowercase();
-        if lower.contains("esc to interrupt") || lower.contains("ctrl+c to interrupt") {
-            return WaitingDetection::Running;
-        }
-        if is_spinner_line(line) {
-            return WaitingDetection::Running;
-        }
-        if !has_waiting_indicator
-            && (lower.contains("esc to cancel") || (line.starts_with('❯') && *has_cursor))
-        {
-            has_waiting_indicator = true;
-        }
-    }
-    if has_waiting_indicator {
-        WaitingDetection::Waiting
-    } else {
-        WaitingDetection::Unknown
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Helper: build lines where none have the cursor (for busy/non-prompt tests).
-    fn nc(strs: &[&str]) -> Vec<(String, bool)> {
-        strs.iter().map(|s| (s.to_string(), false)).collect()
-    }
-
-    /// Helper: build lines where the first entry has the cursor.
-    fn with_cursor(strs: &[&str]) -> Vec<(String, bool)> {
-        strs.iter()
-            .enumerate()
-            .map(|(i, s)| (s.to_string(), i == 0))
-            .collect()
-    }
-
-    #[test]
-    fn busy_when_esc_to_interrupt() {
-        let l = nc(&["Reading file...", "esc to interrupt"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
-    }
-
-    #[test]
-    fn busy_when_ctrl_c_to_interrupt() {
-        let l = nc(&["Working...", "ctrl+c to interrupt"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
-    }
-
-    #[test]
-    fn busy_takes_priority_over_prompt() {
-        let l = with_cursor(&["❯", "esc to interrupt"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
-    }
-
-    #[test]
-    fn busy_when_spinner() {
-        let l = with_cursor(&["❯", "✢ Simmering\u{2026}"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
-    }
-
-    #[test]
-    fn busy_when_spinner_various_chars() {
-        let l = nc(&["✽ Thinking\u{2026}"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Running);
-    }
-
-    #[test]
-    fn waiting_when_esc_to_cancel() {
-        let l = nc(&["Do you want to proceed?", "esc to cancel"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Waiting);
-    }
-
-    #[test]
-    fn waiting_when_prompt() {
-        // cursor is on the ❯ row
-        let l = with_cursor(&["❯"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Waiting);
-    }
-
-    #[test]
-    fn waiting_when_typing_at_prompt() {
-        // user is mid-input: ❯ line with typed text, cursor still on that row
-        let l = with_cursor(&["❯ test"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Waiting);
-    }
-
-    #[test]
-    fn unknown_when_prompt_without_cursor() {
-        // echoed ❯ line after Enter: cursor has moved away → unknown (maintain state)
-        let l = nc(&["❯ test"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
-    }
-
-    #[test]
-    fn unknown_when_empty() {
-        let l: Vec<(String, bool)> = vec![];
-        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
-    }
-
-    #[test]
-    fn unknown_without_indicators() {
-        // completion list items or plain output: no clear signal
-        let l = nc(&["some output", "more output"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
-    }
-
-    #[test]
-    fn unknown_slash_completion_list() {
-        // `/` completion pushed ❯ out of scan range; only completion items visible
-        let l = nc(&["/review", "/chat", "/help", "/commit"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
-    }
-
-    #[test]
-    fn gt_no_longer_triggers_waiting() {
-        let l = nc(&["> quoted text in output"]);
-        assert_eq!(detect_waiting(&l), WaitingDetection::Unknown);
-    }
 
     #[test]
     fn parse_ssh_remote_url() {

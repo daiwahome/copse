@@ -13,8 +13,8 @@ pub struct SessionParams<'a> {
     pub worktree_path: &'a Path,
     pub cols: u16,
     pub rows: u16,
-    pub has_session: bool,
-    pub permission_mode: &'a str,
+    pub command_name: &'a str,
+    pub command_args: &'a [String],
 }
 
 impl Backend {
@@ -88,11 +88,10 @@ impl Backend {
                     let env_term = "TERM=xterm-256color";
                     tmux_args.extend(["-e", env_term]);
                     tmux_args.push("--");
-                    tmux_args.push("claude");
-                    if params.has_session {
-                        tmux_args.push("--continue");
+                    tmux_args.push(params.command_name);
+                    for arg in params.command_args {
+                        tmux_args.push(arg);
                     }
-                    tmux_args.extend(["--permission-mode", params.permission_mode]);
 
                     let out = tmux_command().args(&tmux_args).output()?;
                     if !out.status.success() {
@@ -172,8 +171,8 @@ impl Backend {
         &self,
         session_id: Option<&str>,
         worktree_path: &Path,
-        has_session: bool,
-        permission_mode: &str,
+        command_name: &str,
+        command_args: &[String],
     ) -> CommandBuilder {
         match (self, session_id) {
             (Backend::Tmux, Some(session)) => {
@@ -184,11 +183,8 @@ impl Backend {
                 cmd
             }
             _ => {
-                let mut cmd = CommandBuilder::new("claude");
-                if has_session {
-                    cmd.arg("--continue");
-                }
-                cmd.args(["--permission-mode", permission_mode]);
+                let mut cmd = CommandBuilder::new(command_name);
+                cmd.args(command_args);
                 cmd.env("TERM", "xterm-256color");
                 cmd.cwd(worktree_path);
                 cmd
@@ -341,8 +337,8 @@ mod tests {
             worktree_path: &wt,
             cols: 80,
             rows: 24,
-            has_session: false,
-            permission_mode: "default",
+            command_name: "claude",
+            command_args: &["--permission-mode".to_string(), "default".to_string()],
         });
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);

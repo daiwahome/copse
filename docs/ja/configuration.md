@@ -16,11 +16,14 @@ copse --init
 ファイルが既に存在する場合は上書きせずエラーになる。ファイルが存在しない場合、copse は全てのオプションにデフォルト値を使用する。
 
 ```toml
-auto_commit = false
-auto_permissions = false
-permission_mode = "default"
+agent = "claudecode"
 backend = "builtin"
 diff_filter = "none"
+auto_commit = false
+auto_permissions = false
+
+[claudecode]
+permission_mode = "default"
 
 [color]
 cursor = { bg = "236" }
@@ -88,13 +91,21 @@ page-down = ["Ctrl-F"]
 
 ## オプション
 
-| オプション         | 型     | デフォルト  | 説明                                              |
-| ------------------ | ------ | ----------- | ------------------------------------------------- |
-| `auto_commit`      | bool   | `false`     | Claude の応答ごとに変更を自動コミット             |
-| `auto_permissions` | bool   | `false`     | 安全なコマンドを Claude Code で自動承認           |
-| `permission_mode`  | string | `"default"` | 全タスクの Claude Code パーミッションモード       |
-| `backend`          | string | `"builtin"` | プロセスバックエンド: `"builtin"` または `"tmux"` |
-| `diff_filter`      | string | `"none"`    | Diff の着色方法: `"none"` または `"delta"`        |
+| オプション         | 型     | デフォルト     | 説明                                              |
+| ------------------ | ------ | -------------- | ------------------------------------------------- |
+| `agent`            | string | `"claudecode"` | 使用するエージェント: `"claudecode"`              |
+| `backend`          | string | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"` |
+| `diff_filter`      | string | `"none"`       | Diff の着色方法: `"none"` または `"delta"`        |
+| `auto_commit`      | bool   | `false`        | エージェントの応答ごとに変更を自動コミット        |
+| `auto_permissions` | bool   | `false`        | 安全なコマンドをエージェントで自動承認            |
+
+### `[claudecode]` セクション
+
+Claude Code 固有のオプション。
+
+| オプション        | 型     | デフォルト  | 説明                                        |
+| ----------------- | ------ | ----------- | ------------------------------------------- |
+| `permission_mode` | string | `"default"` | 全タスクの Claude Code パーミッションモード |
 
 ### Permission Mode
 

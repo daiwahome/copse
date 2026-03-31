@@ -529,11 +529,13 @@ impl App {
                 let upstream = branches[selected].clone();
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
                 let content_rows = rows.saturating_sub(1);
+                let agent = self.config.agent.clone();
                 let backend = self.config.backend.clone();
                 let task = Task::new_stopped(
                     name,
                     upstream,
                     &self.worktree_base_dir,
+                    agent,
                     backend,
                     content_rows,
                     cols,

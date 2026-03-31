@@ -16,11 +16,14 @@ copse --init
 If the file already exists, the command exits with an error to prevent overwriting. If the file does not exist, copse uses default values for all options.
 
 ```toml
-auto_commit = false
-auto_permissions = false
-permission_mode = "default"
+agent = "claudecode"
 backend = "builtin"
 diff_filter = "none"
+auto_commit = false
+auto_permissions = false
+
+[claudecode]
+permission_mode = "default"
 
 [color]
 cursor = { bg = "236" }
@@ -88,13 +91,21 @@ page-down = ["Ctrl-F"]
 
 ## Options
 
-| Option             | Type   | Default     | Description                                    |
-| ------------------ | ------ | ----------- | ---------------------------------------------- |
-| `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response |
-| `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code      |
-| `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks      |
-| `backend`          | string | `"builtin"` | Process backend: `"builtin"` or `"tmux"`       |
-| `diff_filter`      | string | `"none"`    | Diff colorizer: `"none"` or `"delta"`          |
+| Option             | Type   | Default        | Description                                   |
+| ------------------ | ------ | -------------- | --------------------------------------------- |
+| `agent`            | string | `"claudecode"` | Agent to use: `"claudecode"`                  |
+| `backend`          | string | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`      |
+| `diff_filter`      | string | `"none"`       | Diff colorizer: `"none"` or `"delta"`         |
+| `auto_commit`      | bool   | `false`        | Auto-commit changes after each agent response |
+| `auto_permissions` | bool   | `false`        | Auto-approve safe commands in the agent       |
+
+### `[claudecode]` Section
+
+Agent-specific options for Claude Code.
+
+| Option            | Type   | Default     | Description                               |
+| ----------------- | ------ | ----------- | ----------------------------------------- |
+| `permission_mode` | string | `"default"` | Claude Code permission mode for all tasks |
 
 ### Permission Mode
 

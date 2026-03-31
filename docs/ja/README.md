@@ -36,6 +36,7 @@ upstream branch (例: feature-x)
 ### オプション
 
 - [delta](https://github.com/dandavison/delta) — インストールされている場合、diff view で delta によるシンタックスハイライトと単語レベルの差分強調が有効になる。delta がない場合は tig 風のシンプルな配色で表示される。
+- [tmux](https://github.com/tmux/tmux) (3.0+) — バックエンドとして設定すると（設定ファイルで `backend = "tmux"`）、Claude Code プロセスが tmux セッション内で実行され、copse 終了後もバックグラウンドで動作し続ける。tmux がない場合はビルトインバックエンドが使用され、copse 終了時にプロセスは終了する。詳細は[設定](configuration.md#backend)を参照。
 
 ### 推奨ターミナル
 

@@ -1,3 +1,4 @@
+mod agent;
 mod app;
 mod backend;
 mod config;
@@ -49,9 +50,11 @@ async fn main() -> anyhow::Result<()> {
     let worktree_base_dir = task::worktree_base_dir(&repo_root)?;
     let config = config::Config::load()?;
 
+    config.agent.validate()?;
     config.backend.validate()?;
     config.diff_filter.validate()?;
 
+    let agent = config.agent.clone();
     let backend = config.backend.clone();
 
     // Restore the terminal even on panic
@@ -82,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
             name.clone(),
             &repo_root,
             &worktree_base_dir,
+            agent.clone(),
             backend.clone(),
             rows,
             cols,

@@ -7,6 +7,39 @@ use crate::keybind::RawKeyBindings;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum Agent {
+    #[default]
+    ClaudeCode,
+}
+
+impl std::fmt::Display for Agent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Agent::ClaudeCode => write!(f, "claudecode"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClaudeCodeConfig {
+    #[serde(default = "default_permission_mode")]
+    pub permission_mode: String,
+}
+
+impl Default for ClaudeCodeConfig {
+    fn default() -> Self {
+        Self {
+            permission_mode: default_permission_mode(),
+        }
+    }
+}
+
+fn default_permission_mode() -> String {
+    "default".to_string()
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Backend {
     #[default]
     BuiltIn,
@@ -45,33 +78,24 @@ fn config_path() -> anyhow::Result<PathBuf> {
     Ok(strategy.config_dir().join("copse").join("config.toml"))
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Config {
-    pub auto_commit: bool,
-    pub auto_permissions: bool,
-    pub permission_mode: String,
+    #[serde(default)]
+    pub agent: Agent,
     #[serde(default)]
     pub backend: Backend,
     #[serde(default)]
     pub diff_filter: DiffFilter,
     #[serde(default)]
+    pub auto_commit: bool,
+    #[serde(default)]
+    pub auto_permissions: bool,
+    #[serde(default, rename = "claudecode")]
+    pub claude_code: ClaudeCodeConfig,
+    #[serde(default)]
     pub color: ColorConfig,
     #[serde(default)]
     pub keys: RawKeyBindings,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            auto_commit: false,
-            auto_permissions: false,
-            permission_mode: "default".to_string(),
-            backend: Backend::default(),
-            diff_filter: DiffFilter::default(),
-            color: ColorConfig::default(),
-            keys: RawKeyBindings::default(),
-        }
-    }
 }
 
 impl Config {
@@ -111,11 +135,16 @@ impl Config {
     /// Serialize config to a human-friendly TOML string with inline color tables.
     fn to_toml(&self) -> String {
         let mut out = String::new();
-        out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
-        out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
-        out.push_str(&format!("permission_mode = \"{}\"\n", self.permission_mode));
+        out.push_str(&format!("agent = \"{}\"\n", self.agent));
         out.push_str(&format!("backend = \"{}\"\n", self.backend));
         out.push_str(&format!("diff_filter = \"{}\"\n", self.diff_filter));
+        out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
+        out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
+        out.push_str("\n[claudecode]\n");
+        out.push_str(&format!(
+            "permission_mode = \"{}\"\n",
+            self.claude_code.permission_mode
+        ));
         out.push_str("\n[color]\n");
 
         let entries: &[(&str, &ColorEntry)] = &[

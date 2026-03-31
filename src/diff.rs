@@ -1,7 +1,4 @@
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 use ansi_to_tui::IntoText;
 use ratatui::text::Line;
@@ -83,25 +80,10 @@ impl DiffState {
         name: &str,
         upstream: &str,
         diff_filter: &DiffFilter,
-    ) -> anyhow::Result<(Self, Option<String>)> {
+    ) -> anyhow::Result<Self> {
         let raw = get_diff(repo_root, name, upstream)?;
-        let (colored, warning) = match diff_filter {
-            DiffFilter::None => (None, None),
-            DiffFilter::Auto => (colorize_with_delta(&raw), None),
-            DiffFilter::Delta => {
-                let colored = colorize_with_delta(&raw);
-                let warning = if colored.is_none() {
-                    Some("diff_filter = \"delta\" but delta is not installed".to_string())
-                } else {
-                    None
-                };
-                (colored, warning)
-            }
-        };
-        Ok((
-            Self::parse(&raw, name.to_string(), colored.as_deref()),
-            warning,
-        ))
+        let colored = diff_filter.colorize(&raw);
+        Ok(Self::parse(&raw, name.to_string(), colored.as_deref()))
     }
 
     /// Parse unified diff text into structured DiffState.
@@ -468,54 +450,6 @@ fn line_matches(line: &DiffLine, needle: &str, anchored: bool) -> bool {
         display.starts_with(needle)
     } else {
         display.contains(needle)
-    }
-}
-
-/// Check if delta is available in PATH (cached after first call).
-fn is_delta_available() -> bool {
-    static AVAILABLE: OnceLock<bool> = OnceLock::new();
-    *AVAILABLE.get_or_init(|| {
-        Command::new("delta")
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-    })
-}
-
-/// Run raw diff text through `delta --color-only` for syntax highlighting.
-/// Returns None if delta is not installed or fails.
-fn colorize_with_delta(raw_diff: &str) -> Option<String> {
-    if !is_delta_available() {
-        return None;
-    }
-
-    // `--dark` suppresses delta's OSC 11 terminal background-color query.
-    // Without it, delta writes `ESC]11;?ST` directly to /dev/tty and reads
-    // back `ESC]11;rgb:…ST`, which copse (in raw mode) sees as keyboard input.
-    let mut child = Command::new("delta")
-        .args(["--no-gitconfig", "--color-only", "--dark"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    let mut stdin = child.stdin.take().unwrap();
-    let output = std::thread::scope(|s| {
-        s.spawn(|| {
-            let _ = stdin.write_all(raw_diff.as_bytes());
-            drop(stdin);
-        });
-        child.wait_with_output()
-    });
-
-    let output = output.ok()?;
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        None
     }
 }
 

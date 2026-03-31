@@ -26,17 +26,15 @@ impl std::fmt::Display for Backend {
 #[serde(rename_all = "lowercase")]
 pub enum DiffFilter {
     #[default]
-    Auto,
-    Delta,
     None,
+    Delta,
 }
 
 impl std::fmt::Display for DiffFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DiffFilter::Auto => write!(f, "auto"),
-            DiffFilter::Delta => write!(f, "delta"),
             DiffFilter::None => write!(f, "none"),
+            DiffFilter::Delta => write!(f, "delta"),
         }
     }
 }

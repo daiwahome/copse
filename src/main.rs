@@ -59,7 +59,6 @@ async fn main() -> anyhow::Result<()> {
     config.diff_filter.validate()?;
     config.validate_notification_command()?;
 
-    let agent = config.agent.clone();
     let backend = config.backend.clone();
 
     // Restore the terminal even on panic
@@ -90,7 +89,6 @@ async fn main() -> anyhow::Result<()> {
             name.clone(),
             &repo_root,
             &worktree_base_dir,
-            agent.clone(),
             backend.clone(),
             rows,
             cols,

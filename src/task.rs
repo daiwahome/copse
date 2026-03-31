@@ -9,8 +9,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 use etcetera::BaseStrategy;
 
-use crate::agent::WaitingDetection;
-use crate::config::{Agent, Backend, Config};
+use crate::config::{Backend, Config};
 use crate::event::{AppEvent, TaskId};
 
 const SCROLLBACK_LEN: usize = 10_000;
@@ -51,20 +50,8 @@ pub struct Task {
     pub parser: Arc<Mutex<vt100::Parser>>,
     /// Cached: whether Claude appears to be waiting for user input
     pub waiting_for_input: bool,
-    /// True when PTY output has arrived since last `update_waiting_status` call
-    pub waiting_status_dirty: bool,
-    /// Set when Enter is pressed; cleared when a non-waiting screen state is seen or
-    /// after 300 ms. Prevents flipping back to "waiting" before Claude has had time
-    /// to start processing (handles echo + response arriving in the same PTY batch).
-    pub last_enter_at: Option<std::time::Instant>,
-    /// Set when detect_waiting first returns true after the grace period.
-    /// "Waiting" is only accepted after 100 ms of consistent detection.
-    /// Resets to None when a non-waiting state is observed.
-    pub first_waiting_at: Option<std::time::Instant>,
     /// Scrollback offset for the agent view (0 = live view)
     pub scroll_offset: usize,
-    /// Agent used for this task
-    pub agent: Agent,
     /// Backend used for this task
     pub backend: Backend,
     /// Backend session identifier (e.g. tmux session name). None for BuiltIn.
@@ -106,65 +93,7 @@ impl Task {
             .unwrap_or_else(|e| e.into_inner())
             .screen()
             .clone();
-        let rows = screen.size().0 as usize;
-        let cols = screen.size().1 as usize;
-        let cursor_row = screen.cursor_position().0;
-
-        let mut lines: Vec<(String, bool)> = Vec::new();
-        for r in (0..rows).rev() {
-            let row_text: String = (0..cols)
-                .filter_map(|c| {
-                    screen
-                        .cell(r as u16, c as u16)
-                        .map(|cell| cell.contents().to_string())
-                })
-                .collect();
-            let trimmed = row_text.trim().to_string();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let has_cursor = r as u16 == cursor_row;
-            lines.push((trimmed, has_cursor));
-            if lines.len() >= 10 {
-                break;
-            }
-        }
-        // Clear the expired grace-period timer regardless of detection result.
-        if self
-            .last_enter_at
-            .is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(300))
-        {
-            self.last_enter_at = None;
-        }
-        match self.agent.detect_waiting(&lines) {
-            WaitingDetection::Waiting => {
-                // Guard: don't flip back to "waiting" within 300 ms of Enter.
-                let grace_expired = self.last_enter_at.is_none();
-                if grace_expired {
-                    // Hysteresis: require 100 ms of consistent detection before accepting.
-                    let first = self
-                        .first_waiting_at
-                        .get_or_insert_with(std::time::Instant::now);
-                    if first.elapsed() >= std::time::Duration::from_millis(100) {
-                        self.waiting_for_input = true;
-                        self.first_waiting_at = None;
-                    }
-                }
-            }
-            WaitingDetection::Running => {
-                // Clear running signal: definitely not waiting.
-                self.first_waiting_at = None;
-                self.waiting_for_input = false;
-            }
-            WaitingDetection::Unknown => {
-                // No recognisable signal (e.g. completion list pushed ❯ out of scan
-                // window, or background PTY render between clear states).
-                // Maintain waiting_for_input unchanged.
-                // Reset hysteresis so a brief ❯ render during processing cannot
-                // accumulate through Unknown states to falsely accept "waiting".
-                self.first_waiting_at = None;
-            }
-        }
+        self.waiting_for_input = !has_active_spinner(&screen);
     }
 
     /// Derive the worktree path for a given task name.
@@ -423,7 +352,6 @@ impl Task {
         name: String,
         upstream: String,
         worktree_base_dir: &Path,
-        agent: Agent,
         backend: Backend,
         rows: u16,
         cols: u16,
@@ -439,11 +367,7 @@ impl Task {
             upstream_exists: true,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
             waiting_for_input: true,
-            waiting_status_dirty: false,
-            last_enter_at: None,
-            first_waiting_at: None,
             scroll_offset: 0,
-            agent,
             backend,
             session_id: None,
             writer: None,
@@ -459,7 +383,6 @@ impl Task {
         name: String,
         repo_root: &Path,
         worktree_base_dir: &Path,
-        agent: Agent,
         backend: Backend,
         rows: u16,
         cols: u16,
@@ -483,11 +406,7 @@ impl Task {
             upstream_exists,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
             waiting_for_input: true,
-            waiting_status_dirty: false,
-            last_enter_at: None,
-            first_waiting_at: None,
             scroll_offset: 0,
-            agent,
             backend,
             session_id: None,
             writer: None,
@@ -615,11 +534,7 @@ impl Task {
             worktree_path,
             parser,
             waiting_for_input: true,
-            waiting_status_dirty: false,
-            last_enter_at: None,
-            first_waiting_at: None,
             scroll_offset: 0,
-            agent,
             backend,
             session_id,
             writer: Some(writer),
@@ -735,8 +650,6 @@ impl Task {
             // from the echoed input line.
             if data.contains(&b'\r') {
                 self.waiting_for_input = false;
-                self.last_enter_at = Some(std::time::Instant::now());
-                self.first_waiting_at = None;
             }
         }
         Ok(())
@@ -994,9 +907,107 @@ fn parse_remote_url(url: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path_str))
 }
 
+/// Claude Code spinner characters used for animation frames.
+const SPINNER_CHARS: &[char] = &['✢', '✳', '✶', '✻', '✽', '·'];
+
+/// Scan the PTY screen for a colored spinner character, indicating active processing.
+///
+/// Returns `true` when a spinner character with a non-default foreground color
+/// is found in the visible rows (scanned bottom-to-top, up to 50 non-empty rows).
+fn has_active_spinner(screen: &vt100::Screen) -> bool {
+    let rows = screen.size().0 as usize;
+    let cols = screen.size().1 as usize;
+    let mut scanned = 0;
+    for r in (0..rows).rev() {
+        let row_text: String = (0..cols)
+            .filter_map(|c| {
+                screen
+                    .cell(r as u16, c as u16)
+                    .map(|cell| cell.contents().to_string())
+            })
+            .collect();
+        let trimmed = row_text.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(first_char) = trimmed.chars().next() {
+            if SPINNER_CHARS.contains(&first_char) {
+                for c in 0..cols {
+                    if let Some(cell) = screen.cell(r as u16, c as u16) {
+                        if let Some(ch) = cell.contents().chars().next() {
+                            if SPINNER_CHARS.contains(&ch) {
+                                if !matches!(cell.fgcolor(), vt100::Color::Default) {
+                                    return true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        scanned += 1;
+        if scanned >= 50 {
+            break;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_screen(rows: u16, cols: u16, lines: &[&str]) -> vt100::Screen {
+        let mut parser = vt100::Parser::new(rows, cols, 0);
+        for line in lines {
+            parser.process(line.as_bytes());
+        }
+        parser.screen().clone()
+    }
+
+    fn colored(text: &str) -> String {
+        // ANSI: set foreground to color index 174
+        format!("\x1b[38;5;174m{text}\x1b[0m")
+    }
+
+    #[test]
+    fn spinner_detected_when_colored() {
+        let line = colored("✢ Lollygagging…");
+        let screen = make_screen(10, 40, &[&line]);
+        assert!(has_active_spinner(&screen));
+    }
+
+    #[test]
+    fn spinner_not_detected_when_default_color() {
+        let screen = make_screen(10, 40, &["✻ Worked for 55s"]);
+        assert!(!has_active_spinner(&screen));
+    }
+
+    #[test]
+    fn no_spinner_on_empty_screen() {
+        let screen = make_screen(10, 40, &[]);
+        assert!(!has_active_spinner(&screen));
+    }
+
+    #[test]
+    fn no_spinner_on_plain_text() {
+        let screen = make_screen(10, 40, &["some output\r\nmore output\r\n"]);
+        assert!(!has_active_spinner(&screen));
+    }
+
+    #[test]
+    fn middle_dot_spinner_detected() {
+        let line = colored("· Thinking…");
+        let screen = make_screen(10, 40, &[&line]);
+        assert!(has_active_spinner(&screen));
+    }
+
+    #[test]
+    fn prompt_not_detected_as_spinner() {
+        let screen = make_screen(10, 40, &["❯ hello"]);
+        assert!(!has_active_spinner(&screen));
+    }
 
     #[test]
     fn parse_ssh_remote_url() {

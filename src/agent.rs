@@ -4,18 +4,6 @@ use std::sync::OnceLock;
 
 use crate::config::{Agent, Config};
 
-/// Result of `detect_waiting`: what the PTY screen currently indicates.
-#[derive(Debug, PartialEq)]
-pub enum WaitingDetection {
-    /// Clear waiting signal: `❯` with cursor on its row, or "esc to cancel".
-    Waiting,
-    /// Clear running signal: spinner line or "esc to interrupt".
-    Running,
-    /// No recognisable indicator (e.g. completion list pushed ❯ out of scan range,
-    /// or blank area between renders). Caller should maintain the current state.
-    Unknown,
-}
-
 impl Agent {
     /// Check that the agent's external dependency is available.
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -70,19 +58,6 @@ impl Agent {
                 config.auto_permissions,
                 config.notification_command.as_deref(),
             ),
-        }
-    }
-
-    /// Pure pattern-matching logic for detecting whether the agent is waiting for input.
-    /// Inspects the last few non-empty PTY lines (text + whether the cursor is on that row).
-    ///
-    /// Returns:
-    /// - `Running`  -- spinner or "esc to interrupt" found
-    /// - `Waiting`  -- "esc to cancel" or `❯` with cursor found (and no running signal)
-    /// - `Unknown`  -- neither signal found; caller should keep current state unchanged
-    pub fn detect_waiting(&self, lines: &[(String, bool)]) -> WaitingDetection {
-        match self {
-            Agent::ClaudeCode => detect_waiting_claude_code(lines),
         }
     }
 }
@@ -256,52 +231,6 @@ fn merge_settings(base: &mut serde_json::Value, overlay: &serde_json::Value) {
     }
 }
 
-/// Returns true if `line` looks like Claude Code's processing spinner.
-///
-/// Claude Code renders spinner frames as a Unicode dingbat/symbol character
-/// followed by a verb ending in "ing...", e.g. `✢ Simmering...` or `✽ Thinking...`.
-/// These characters fall in the Miscellaneous Symbols (U+2600-U+26FF) and
-/// Dingbats (U+2700-U+27FF) Unicode blocks.
-fn is_spinner_line(line: &str) -> bool {
-    let mut chars = line.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    let in_symbol_block = ('\u{2600}'..='\u{27FF}').contains(&first);
-    if !in_symbol_block {
-        return false;
-    }
-    let rest = chars.as_str().trim();
-    rest.ends_with("ing\u{2026}") || rest.ends_with("ing...")
-}
-
-/// The cursor check prevents echoed input (`❯ test` on a row the cursor has
-/// left) from being mis-detected as a waiting prompt after Enter is pressed.
-/// `Unknown` handles the case where a completion list (after typing `/`) pushes
-/// the `❯` row out of the scan window: we neither accept nor reject waiting.
-fn detect_waiting_claude_code(lines: &[(String, bool)]) -> WaitingDetection {
-    let mut has_waiting_indicator = false;
-    for (line, has_cursor) in lines {
-        let lower = line.to_lowercase();
-        if lower.contains("esc to interrupt") || lower.contains("ctrl+c to interrupt") {
-            return WaitingDetection::Running;
-        }
-        if is_spinner_line(line) {
-            return WaitingDetection::Running;
-        }
-        if !has_waiting_indicator
-            && (lower.contains("esc to cancel") || (line.starts_with('❯') && *has_cursor))
-        {
-            has_waiting_indicator = true;
-        }
-    }
-    if has_waiting_indicator {
-        WaitingDetection::Waiting
-    } else {
-        WaitingDetection::Unknown
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,136 +253,6 @@ mod tests {
         config.claude_code.permission_mode = "plan".to_string();
         let args = Agent::ClaudeCode.command_args(true, &config);
         assert_eq!(args, vec!["--continue", "--permission-mode", "plan"]);
-    }
-
-    /// Helper: build lines where none have the cursor (for busy/non-prompt tests).
-    fn nc(strs: &[&str]) -> Vec<(String, bool)> {
-        strs.iter().map(|s| (s.to_string(), false)).collect()
-    }
-
-    /// Helper: build lines where the first entry has the cursor.
-    fn with_cursor(strs: &[&str]) -> Vec<(String, bool)> {
-        strs.iter()
-            .enumerate()
-            .map(|(i, s)| (s.to_string(), i == 0))
-            .collect()
-    }
-
-    #[test]
-    fn busy_when_esc_to_interrupt() {
-        let l = nc(&["Reading file...", "esc to interrupt"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Running
-        );
-    }
-
-    #[test]
-    fn busy_when_ctrl_c_to_interrupt() {
-        let l = nc(&["Working...", "ctrl+c to interrupt"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Running
-        );
-    }
-
-    #[test]
-    fn busy_takes_priority_over_prompt() {
-        let l = with_cursor(&["❯", "esc to interrupt"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Running
-        );
-    }
-
-    #[test]
-    fn busy_when_spinner() {
-        let l = with_cursor(&["❯", "✢ Simmering\u{2026}"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Running
-        );
-    }
-
-    #[test]
-    fn busy_when_spinner_various_chars() {
-        let l = nc(&["✽ Thinking\u{2026}"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Running
-        );
-    }
-
-    #[test]
-    fn waiting_when_esc_to_cancel() {
-        let l = nc(&["Do you want to proceed?", "esc to cancel"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Waiting
-        );
-    }
-
-    #[test]
-    fn waiting_when_prompt() {
-        let l = with_cursor(&["❯"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Waiting
-        );
-    }
-
-    #[test]
-    fn waiting_when_typing_at_prompt() {
-        let l = with_cursor(&["❯ test"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Waiting
-        );
-    }
-
-    #[test]
-    fn unknown_when_prompt_without_cursor() {
-        let l = nc(&["❯ test"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Unknown
-        );
-    }
-
-    #[test]
-    fn unknown_when_empty() {
-        let l: Vec<(String, bool)> = vec![];
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Unknown
-        );
-    }
-
-    #[test]
-    fn unknown_without_indicators() {
-        let l = nc(&["some output", "more output"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Unknown
-        );
-    }
-
-    #[test]
-    fn unknown_slash_completion_list() {
-        let l = nc(&["/review", "/chat", "/help", "/commit"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Unknown
-        );
-    }
-
-    #[test]
-    fn gt_no_longer_triggers_waiting() {
-        let l = nc(&["> quoted text in output"]);
-        assert_eq!(
-            Agent::ClaudeCode.detect_waiting(&l),
-            WaitingDetection::Unknown
-        );
     }
 
     // -- merge_settings tests --

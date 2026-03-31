@@ -20,7 +20,7 @@ auto_commit = false
 auto_permissions = false
 permission_mode = "default"
 backend = "builtin"
-diff_filter = "auto"
+diff_filter = "none"
 
 [color]
 cursor = { bg = "236" }
@@ -94,7 +94,7 @@ page-down = ["Ctrl-F"]
 | `auto_permissions` | bool   | `false`     | 安全なコマンドを Claude Code で自動承認           |
 | `permission_mode`  | string | `"default"` | 全タスクの Claude Code パーミッションモード       |
 | `backend`          | string | `"builtin"` | プロセスバックエンド: `"builtin"` または `"tmux"` |
-| `diff_filter`      | string | `"auto"`    | Diff の着色方法: `"auto"`, `"delta"`, `"none"`    |
+| `diff_filter`      | string | `"none"`    | Diff の着色方法: `"none"` または `"delta"`        |
 
 ### Permission Mode
 
@@ -137,11 +137,10 @@ tmux -L copse list-sessions
 
 diff view での着色方法を制御する。
 
-| 値      | 説明                                                                       |
-| ------- | -------------------------------------------------------------------------- |
-| `auto`  | [delta](https://github.com/dandavison/delta) があれば使用、なければ `none` |
-| `delta` | 常に delta を使用（未インストールの場合は `none` にフォールバック）        |
-| `none`  | 外部フィルターなし — tig 風のシンプルな配色（緑/赤の前景色）               |
+| 値      | 説明                                                                                           |
+| ------- | ---------------------------------------------------------------------------------------------- |
+| `none`  | デフォルト — 外部フィルターなし。tig 風のシンプルな配色（緑/赤の前景色）                       |
+| `delta` | [delta](https://github.com/dandavison/delta) でシンタックスハイライト（要 delta インストール） |
 
 delta 使用時はシンタックスハイライト、背景色による差分表示、単語レベルの差分強調が有効になる。
 

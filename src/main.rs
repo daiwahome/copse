@@ -2,6 +2,7 @@ mod app;
 mod backend;
 mod config;
 mod diff;
+mod diff_filter;
 mod event;
 mod keybind;
 mod task;
@@ -49,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::load()?;
 
     config.backend.validate()?;
+    config.diff_filter.validate()?;
 
     let backend = config.backend.clone();
 

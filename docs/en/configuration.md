@@ -20,7 +20,7 @@ auto_commit = false
 auto_permissions = false
 permission_mode = "default"
 backend = "builtin"
-diff_filter = "auto"
+diff_filter = "none"
 
 [color]
 cursor = { bg = "236" }
@@ -88,13 +88,13 @@ page-down = ["Ctrl-F"]
 
 ## Options
 
-| Option             | Type   | Default     | Description                                      |
-| ------------------ | ------ | ----------- | ------------------------------------------------ |
-| `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response   |
-| `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code        |
-| `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks        |
-| `backend`          | string | `"builtin"` | Process backend: `"builtin"` or `"tmux"`         |
-| `diff_filter`      | string | `"auto"`    | Diff colorizer: `"auto"`, `"delta"`, or `"none"` |
+| Option             | Type   | Default     | Description                                    |
+| ------------------ | ------ | ----------- | ---------------------------------------------- |
+| `auto_commit`      | bool   | `false`     | Auto-commit changes after each Claude response |
+| `auto_permissions` | bool   | `false`     | Auto-approve safe commands in Claude Code      |
+| `permission_mode`  | string | `"default"` | Claude Code permission mode for all tasks      |
+| `backend`          | string | `"builtin"` | Process backend: `"builtin"` or `"tmux"`       |
+| `diff_filter`      | string | `"none"`    | Diff colorizer: `"none"` or `"delta"`          |
 
 ### Permission Mode
 
@@ -137,11 +137,10 @@ tmux -L copse list-sessions
 
 Controls how diffs are colorized in the diff view.
 
-| Value   | Description                                                                     |
-| ------- | ------------------------------------------------------------------------------- |
-| `auto`  | Use [delta](https://github.com/dandavison/delta) if installed, otherwise `none` |
-| `delta` | Always use delta (falls back to `none` if not installed)                        |
-| `none`  | No external filter — plain tig-style coloring (green/red foreground)            |
+| Value   | Description                                                                                               |
+| ------- | --------------------------------------------------------------------------------------------------------- |
+| `none`  | Default — no external filter; plain tig-style coloring (green/red foreground)                             |
+| `delta` | Use [delta](https://github.com/dandavison/delta) for syntax highlighting (requires delta to be installed) |
 
 When delta is used, diffs get syntax highlighting, colored backgrounds, and word-level emphasis.
 

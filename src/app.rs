@@ -912,13 +912,10 @@ impl App {
                                 upstream,
                                 &self.config.diff_filter,
                             ) {
-                                Ok((state, warning)) => {
+                                Ok(state) => {
                                     self.push_diff(state);
                                     self.fullscreen = None;
                                     self.focus = self.pane_of(View::Diff);
-                                    if let Some(w) = warning {
-                                        self.last_error = Some(w);
-                                    }
                                 }
                                 Err(e) => {
                                     self.last_error = Some(format!("Failed to get diff: {e}"));
@@ -1232,11 +1229,8 @@ impl App {
                     upstream,
                     &self.config.diff_filter,
                 ) {
-                    Ok((state, warning)) => {
+                    Ok(state) => {
                         self.update_diff(state);
-                        if let Some(w) = warning {
-                            self.last_error = Some(w);
-                        }
                     }
                     Err(e) => {
                         self.last_error = Some(format!("Failed to get diff: {e}"));

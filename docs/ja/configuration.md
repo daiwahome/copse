@@ -250,17 +250,24 @@ Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュさ
 
 `auto_permissions` が有効な場合、copse は以下の安全なコマンドを事前承認し、Claude Code が確認プロンプトを出さないようにする:
 
-| カテゴリ         | コマンド                                                 |
-| ---------------- | -------------------------------------------------------- |
-| バージョン管理   | `git`                                                    |
-| ファイル読み取り | `cat`, `head`, `tail`                                    |
-| 検索             | `find`, `grep`, `rg`                                     |
-| ディレクトリ     | `ls`, `tree`, `pwd`, `mkdir`                             |
-| テキスト処理     | `wc`, `diff`, `sort`, `uniq`, `cut`                      |
-| ユーティリティ   | `echo`, `which`, `file`, `date`, `basename`, `dirname`   |
-| 組み込みツール   | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write` |
+| カテゴリ       | コマンド                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git (参照系)   | `blame`, `branch`, `cat-file`, `config`, `diff`, `log`, `ls-files`, `ls-tree`, `remote`, `rev-parse`, `shortlog`, `show`, `stash list`, `status`, `tag` |
+| ディレクトリ   | `ls`, `tree`, `pwd`, `mkdir`                                                                                                                            |
+| テキスト処理   | `wc`, `diff` (coreutils), `sort`, `uniq`, `cut`                                                                                                         |
+| ユーティリティ | `echo`, `which`, `file`, `date`, `basename`, `dirname`                                                                                                  |
+| 組み込みツール | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write`                                                                                                |
 
-ビルドツール (例: `cargo`, `npm`) は任意のコードを実行できるため、意図的に除外している。
+`Edit`、`Write`、`NotebookEdit` は worktree ディレクトリ内に制限されるため、エージェントはワークスペース外のファイルを変更できない。
+
+また、機密ファイルの読み取りはデフォルトで拒否される:
+
+| カテゴリ             | パス                                                              |
+| -------------------- | ----------------------------------------------------------------- |
+| 認証情報・鍵         | `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.azure`    |
+| シークレットファイル | `**/.env`, `**/.env.*`, `**/*.pem`, `**/*.key`                    |
+| シェル履歴           | `~/.bash_history`, `~/.zsh_history`                               |
+| 認証設定             | `~/.netrc`, `~/.docker/config.json`, `~/.kube/config`, `~/.npmrc` |
 
 ## Notification Command
 
@@ -298,10 +305,10 @@ notification_command = "printf '\\a' && osascript -e 'display notification \"Nee
 
 ## 設定のマージ戦略
 
-copse はタスク起動時に各 worktree に `.claude/settings.local.json` を書き込む。ファイルが既に存在する場合、copse は既存のキーを保持する:
+copse はタスク起動時に各 worktree に `.claude/settings.local.json` を書き込む。最終的な設定は以下のレイヤーを順にマージして構築される:
 
-- `hooks` が既に設定されている場合、copse は上書きしない
-- `permissions` が既に設定されている場合、copse は上書きしない
-- 不足しているキーのみが組み込みテンプレートから補完される
+1. **リポジトリ設定** — リポジトリルートの `.claude/settings.local.json` (存在する場合)
+2. **copse テンプレート** — 組み込みの permissions と hooks (`auto_commit` / `auto_permissions` で制御)
+3. **機密パス deny ルール** — `auto_permissions` が有効な場合に自動生成
 
-つまり、worktree の設定をカスタマイズしても copse がリセットすることはない。
+配列は結合・重複排除されるため、リポジトリ設定に追加した permissions は copse テンプレートと共に保持される。

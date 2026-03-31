@@ -250,17 +250,24 @@ The commits ahead count in the Tasks view refreshes every 5 seconds, so you can 
 
 When `auto_permissions` is enabled, copse pre-approves the following safe commands so Claude Code does not prompt for confirmation:
 
-| Category        | Commands                                                 |
-| --------------- | -------------------------------------------------------- |
-| Version control | `git`                                                    |
-| File reading    | `cat`, `head`, `tail`                                    |
-| Search          | `find`, `grep`, `rg`                                     |
-| Directory       | `ls`, `tree`, `pwd`, `mkdir`                             |
-| Text processing | `wc`, `diff`, `sort`, `uniq`, `cut`                      |
-| Utilities       | `echo`, `which`, `file`, `date`, `basename`, `dirname`   |
-| Built-in tools  | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write` |
+| Category        | Commands                                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git (read-only) | `blame`, `branch`, `cat-file`, `config`, `diff`, `log`, `ls-files`, `ls-tree`, `remote`, `rev-parse`, `shortlog`, `show`, `stash list`, `status`, `tag` |
+| Directory       | `ls`, `tree`, `pwd`, `mkdir`                                                                                                                            |
+| Text processing | `wc`, `diff` (coreutils), `sort`, `uniq`, `cut`                                                                                                         |
+| Utilities       | `echo`, `which`, `file`, `date`, `basename`, `dirname`                                                                                                  |
+| Built-in tools  | `Edit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Write`                                                                                                |
 
-Build tools (e.g. `cargo`, `npm`) are intentionally excluded as they can execute arbitrary code.
+`Edit`, `Write`, and `NotebookEdit` are restricted to the worktree directory so the agent cannot modify files outside its workspace.
+
+Additionally, reading sensitive files is denied by default:
+
+| Category           | Paths                                                             |
+| ------------------ | ----------------------------------------------------------------- |
+| Credentials & keys | `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.azure`    |
+| Secrets files      | `**/.env`, `**/.env.*`, `**/*.pem`, `**/*.key`                    |
+| Shell history      | `~/.bash_history`, `~/.zsh_history`                               |
+| Auth configs       | `~/.netrc`, `~/.docker/config.json`, `~/.kube/config`, `~/.npmrc` |
 
 ## Notification Command
 
@@ -298,10 +305,10 @@ Check your terminal's notification/bell settings for the desired behavior.
 
 ## Settings Merge Strategy
 
-copse writes a `.claude/settings.local.json` file into each worktree when a task is launched. If the file already exists, copse preserves existing keys:
+copse writes a `.claude/settings.local.json` file into each worktree when a task is launched. The final settings are built by merging layers in order:
 
-- If `hooks` is already set, copse does not overwrite it
-- If `permissions` is already set, copse does not overwrite it
-- Only missing keys are populated from the built-in template
+1. **Repository settings** — `.claude/settings.local.json` at the repository root (if it exists)
+2. **copse template** — built-in permissions and hooks (controlled by `auto_commit` / `auto_permissions`)
+3. **Sensitive-path deny rules** — automatically generated when `auto_permissions` is enabled
 
-This means you can customize a worktree's settings and copse will not reset your changes.
+Arrays are concatenated and deduplicated, so additional permissions added in the repository settings are preserved alongside the copse template.

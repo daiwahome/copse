@@ -142,10 +142,38 @@ fn setup_claude_code_worktree(
     }
     if auto_permissions {
         if let Some(permissions) = template.get("permissions") {
+            let mut permissions = permissions.clone();
+            // Restrict Edit / Write / NotebookEdit to worktree path
+            if let Some(allow) = permissions.get_mut("allow").and_then(|v| v.as_array_mut()) {
+                let worktree_prefix = worktree_path.to_string_lossy();
+                for entry in allow.iter_mut() {
+                    if let Some(s) = entry.as_str() {
+                        let restricted = match s {
+                            "Edit" => Some(format!("Edit({worktree_prefix}/**)")),
+                            "Write" => Some(format!("Write({worktree_prefix}/**)")),
+                            "NotebookEdit" => Some(format!("NotebookEdit({worktree_prefix}/**)")),
+                            _ => None,
+                        };
+                        if let Some(r) = restricted {
+                            *entry = serde_json::Value::String(r);
+                        }
+                    }
+                }
+            }
             merge_settings(
                 &mut settings,
-                &serde_json::json!({ "permissions": permissions.clone() }),
+                &serde_json::json!({ "permissions": permissions }),
             );
+            // Deny access to sensitive files outside the worktree.
+            // Merged separately so that parent deny rules are preserved.
+            if let Ok(home) = etcetera::home_dir() {
+                let h = home.to_string_lossy();
+                let deny = sensitive_path_deny_rules(&h);
+                merge_settings(
+                    &mut settings,
+                    &serde_json::json!({ "permissions": { "deny": deny } }),
+                );
+            }
         }
     }
     if let Some(cmd) = notification_command {
@@ -169,6 +197,31 @@ fn setup_claude_code_worktree(
     )?;
 
     Ok(())
+}
+
+/// Returns deny rules for sensitive paths that should not be accessible to the agent.
+fn sensitive_path_deny_rules(home: &str) -> Vec<String> {
+    vec![
+        // Credentials & keys
+        format!("Read({home}/.ssh/**)"),
+        format!("Read({home}/.gnupg/**)"),
+        format!("Read({home}/.aws/**)"),
+        format!("Read({home}/.config/gcloud/**)"),
+        format!("Read({home}/.azure/**)"),
+        // Secrets files
+        "Read(**/.env)".to_string(),
+        "Read(**/.env.*)".to_string(),
+        "Read(**/*.pem)".to_string(),
+        "Read(**/*.key)".to_string(),
+        // Shell history
+        format!("Read({home}/.bash_history)"),
+        format!("Read({home}/.zsh_history)"),
+        // Auth tokens & configs
+        format!("Read({home}/.netrc)"),
+        format!("Read({home}/.docker/config.json)"),
+        format!("Read({home}/.kube/config)"),
+        format!("Read({home}/.npmrc)"),
+    ]
 }
 
 /// Deep-merge `overlay` into `base`.
@@ -530,8 +583,56 @@ mod tests {
             .as_array()
             .unwrap()
             .clone();
+        let wt_str = f.wt.to_string_lossy().to_string();
         assert!(allow.contains(&serde_json::json!("Bash(cargo *)")));
-        assert!(allow.contains(&serde_json::json!("Edit")));
+        assert!(allow.contains(&serde_json::json!(format!("Edit({wt_str}/**)"))));
+        assert!(allow.contains(&serde_json::json!(format!("Write({wt_str}/**)"))));
+        assert!(allow.contains(&serde_json::json!(format!("NotebookEdit({wt_str}/**)"))));
+        // Unrestricted versions should NOT be present
+        assert!(!allow.contains(&serde_json::json!("Edit")));
+        assert!(!allow.contains(&serde_json::json!("Write")));
+        assert!(!allow.contains(&serde_json::json!("NotebookEdit")));
+    }
+
+    #[test]
+    fn auto_permissions_adds_deny_rules() {
+        let f = WorktreeFixture::new();
+
+        setup_claude_code_worktree(&f.wt, &f.repo, false, true, None).unwrap();
+
+        let deny = f.read_worktree_settings()["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let home = etcetera::home_dir().unwrap();
+        let h = home.to_string_lossy();
+        assert!(deny.contains(&serde_json::json!(format!("Read({h}/.ssh/**)"))));
+        assert!(deny.contains(&serde_json::json!(format!("Read({h}/.aws/**)"))));
+        assert!(deny.contains(&serde_json::json!("Read(**/.env)")));
+        assert!(deny.contains(&serde_json::json!("Read(**/.env.*)")));
+        assert!(deny.contains(&serde_json::json!("Read(**/*.pem)")));
+        assert!(deny.contains(&serde_json::json!(format!("Read({h}/.kube/config)"))));
+    }
+
+    #[test]
+    fn deny_rules_merge_with_parent_deny() {
+        let f = WorktreeFixture::new();
+        f.set_parent_settings(&serde_json::json!({
+            "permissions": {"deny": ["Bash(rm *)"]}
+        }));
+
+        setup_claude_code_worktree(&f.wt, &f.repo, false, true, None).unwrap();
+
+        let deny = f.read_worktree_settings()["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .clone();
+        // Parent deny rule is preserved
+        assert!(deny.contains(&serde_json::json!("Bash(rm *)")));
+        // Sensitive path deny rules are also present
+        let home = etcetera::home_dir().unwrap();
+        let h = home.to_string_lossy();
+        assert!(deny.contains(&serde_json::json!(format!("Read({h}/.ssh/**)"))));
     }
 
     #[test]

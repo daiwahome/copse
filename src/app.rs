@@ -326,6 +326,9 @@ impl App {
             AppEvent::SquashMerge { .. } => {
                 // Handled directly by Tui::run (needs alternate screen exit)
             }
+            AppEvent::Shell { .. } => {
+                // Handled directly by Tui::run (needs terminal suspend or tmux)
+            }
             AppEvent::FatalError(msg) => {
                 self.last_error = Some(msg);
                 self.should_quit = true;
@@ -1038,6 +1041,20 @@ impl App {
                 if let Some(task) = self.tasks.get(self.selected_index) {
                     if task.is_stopped() {
                         self.resume_task(self.selected_index, true);
+                    }
+                }
+            }
+            TasksAction::Shell => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    if task.worktree_path.exists() {
+                        let _ = self.event_tx.try_send(AppEvent::Shell {
+                            worktree_path: task.worktree_path.clone(),
+                        });
+                    } else {
+                        self.last_error = Some(
+                            "Worktree does not exist. Launch the task at least once first."
+                                .to_string(),
+                        );
                     }
                 }
             }

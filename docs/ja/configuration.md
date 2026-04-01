@@ -67,6 +67,7 @@ quit = ["q", "Q"]
 kill = ["Ctrl-K"]
 close-children = ["Ctrl-Q"]
 start-fresh = ["Ctrl-A"]
+shell = ["s"]
 
 [keys.diff]
 move-down = ["j", "Down"]
@@ -107,6 +108,7 @@ exit-scroll-mode = ["q", "Enter"]
 | `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"`                                     |
 | `backend`              | string          | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"`                        |
 | `diff_filter`          | string          | `"none"`       | Diff の着色方法: `"none"` または `"delta"`                               |
+| `shell_mode`           | string          | `"suspend"`    | シェルの開き方: `"suspend"` または `"tmux"`                              |
 | `auto_commit`          | bool            | `false`        | エージェントの応答ごとに変更を自動コミット                               |
 | `auto_permissions`     | bool            | `false`        | 安全なコマンドをエージェントで自動承認                                   |
 | `log_level`            | string          | `"info"`       | ログレベル: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"` |
@@ -167,6 +169,15 @@ diff view での着色方法を制御する。
 | `delta` | [delta](https://github.com/dandavison/delta) でシンタックスハイライト（要 delta インストール） |
 
 delta 使用時はシンタックスハイライト、背景色による差分表示、単語レベルの差分強調が有効になる。
+
+### Shell Mode
+
+タスクで `s` を押した時のシェルの開き方を制御する。
+
+| 値        | 説明                                                                                 |
+| --------- | ------------------------------------------------------------------------------------ |
+| `suspend` | デフォルト — TUI を一時停止し worktree ディレクトリで `$SHELL` を起動。`exit` で復帰 |
+| `tmux`    | TUI を中断せず worktree ディレクトリで新しい tmux ウィンドウを開く（要 tmux）        |
 
 ## カラーテーマ
 

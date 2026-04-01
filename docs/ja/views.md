@@ -40,6 +40,7 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 | `S`           | upstream から同期 (reset, 停止中のみ)        |
 | `U`           | upstream ブランチを変更 (停止中のみ)         |
 | `!`           | タスクを削除 (worktree + branch, 停止中のみ) |
+| `s`           | worktree ディレクトリでシェルを開く          |
 | `R`           | commits ahead を更新                         |
 | `Ctrl-g`      | ヘルプダイアログを表示                       |
 | `q` / `Q`     | copse を終了                                 |

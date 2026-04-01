@@ -67,6 +67,7 @@ quit = ["q", "Q"]
 kill = ["Ctrl-K"]
 close-children = ["Ctrl-Q"]
 start-fresh = ["Ctrl-A"]
+shell = ["s"]
 
 [keys.diff]
 move-down = ["j", "Down"]
@@ -107,6 +108,7 @@ exit-scroll-mode = ["q", "Enter"]
 | `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"`                                            |
 | `backend`              | string          | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`                                |
 | `diff_filter`          | string          | `"none"`       | Diff colorizer: `"none"` or `"delta"`                                   |
+| `shell_mode`           | string          | `"suspend"`    | Shell open method: `"suspend"` or `"tmux"`                              |
 | `auto_commit`          | bool            | `false`        | Auto-commit changes after each agent response                           |
 | `auto_permissions`     | bool            | `false`        | Auto-approve safe commands in the agent                                 |
 | `log_level`            | string          | `"info"`       | Log level: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"` |
@@ -167,6 +169,15 @@ Controls how diffs are colorized in the diff view.
 | `delta` | Use [delta](https://github.com/dandavison/delta) for syntax highlighting (requires delta to be installed) |
 
 When delta is used, diffs get syntax highlighting, colored backgrounds, and word-level emphasis.
+
+### Shell Mode
+
+Controls how the shell is opened when pressing `s` on a task.
+
+| Value     | Description                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------- |
+| `suspend` | Default — suspends the TUI and launches `$SHELL` in the worktree directory; resumes on `exit` |
+| `tmux`    | Opens a new tmux window in the worktree directory without suspending the TUI (requires tmux)  |
 
 ## Color Theme
 

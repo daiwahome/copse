@@ -40,6 +40,7 @@ Each task shows:
 | `S`           | Sync from upstream (reset, stopped only)        |
 | `U`           | Change upstream branch (stopped only)           |
 | `!`           | Delete task (worktree + branch, stopped only)   |
+| `s`           | Open shell in worktree directory                |
 | `R`           | Refresh commits ahead                           |
 | `Ctrl-g`      | Show help dialog                                |
 | `q` / `Q`     | Quit copse                                      |

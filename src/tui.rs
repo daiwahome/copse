@@ -135,6 +135,12 @@ impl Tui {
                             }
                             app.refresh_commits_ahead();
                         }
+                        Some(AppEvent::Shell { worktree_path }) => {
+                            let result = self.execute_shell(&worktree_path, &app.config.shell_mode);
+                            if let Err(e) = result {
+                                app.last_error = Some(format!("Shell failed: {e}"));
+                            }
+                        }
                         Some(event) => {
                             app.handle_event(event)?;
                         }
@@ -180,12 +186,7 @@ impl Tui {
             }
         };
 
-        // Pause input reader so it doesn't consume stdin during $EDITOR
-        self.input_paused.store(true, Ordering::Relaxed);
-
-        // Leave alternate screen so $EDITOR can use the terminal
-        disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        self.suspend()?;
 
         let mut result = (|| -> anyhow::Result<()> {
             // Build commit message template (rebase -i squash style)
@@ -288,7 +289,41 @@ impl Tui {
             }
         }
 
-        // Return to alternate screen and resume input reader
+        self.resume()?;
+
+        result
+    }
+
+    fn execute_shell(
+        &mut self,
+        worktree_path: &std::path::Path,
+        shell_mode: &crate::config::ShellMode,
+    ) -> anyhow::Result<()> {
+        if shell_mode.needs_suspend() {
+            self.suspend()?;
+            let _ =
+                nix::sys::termios::tcflush(std::io::stdin(), nix::sys::termios::FlushArg::TCIFLUSH);
+        }
+
+        let result = shell_mode.open(worktree_path);
+
+        if shell_mode.needs_suspend() {
+            self.resume()?;
+        }
+
+        result
+    }
+
+    /// Pause input reader and leave the alternate screen.
+    fn suspend(&mut self) -> anyhow::Result<()> {
+        self.input_paused.store(true, Ordering::Relaxed);
+        disable_raw_mode()?;
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        Ok(())
+    }
+
+    /// Return to the alternate screen and resume input reader.
+    fn resume(&mut self) -> anyhow::Result<()> {
         enable_raw_mode()?;
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
         if self.keyboard_enhancement_enabled {
@@ -299,8 +334,7 @@ impl Tui {
         }
         self.terminal.clear()?;
         self.input_paused.store(false, Ordering::Relaxed);
-
-        result
+        Ok(())
     }
 }
 

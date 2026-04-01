@@ -32,6 +32,10 @@ pub enum AppEvent {
         name: String,
         upstream: String,
     },
+    /// Open a shell in the given worktree directory
+    Shell {
+        worktree_path: std::path::PathBuf,
+    },
     /// Unrecoverable error in a background task; triggers shutdown
     FatalError(String),
 }

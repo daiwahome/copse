@@ -90,21 +90,28 @@ For key bindings and view details, see [Views](docs/en/views.md).
 
 ```
 copse/src
- ├── main.rs      Entry point, SIGTSTP handling, panic hook
- ├── tui.rs       Ratatui + Crossterm event loop
- ├── app.rs       Application state (tasks, mode, key handling)
- ├── task.rs      Manages git worktrees, spawns `claude` in a PTY
- │                Reads PTY output → vt100 parser → screen buffer
- ├── diff.rs      Unified diff parser, search, and delta integration
- ├── config.rs    Configuration (confy, ~/.config/copse/)
- ├── event.rs     AppEvent enum (key, task lifecycle, resize)
+ ├── main.rs         Entry point, SIGTSTP handling, panic hook
+ ├── tui.rs          Ratatui + Crossterm event loop, suspend/resume
+ ├── app.rs          Application state (tasks, views, key handling)
+ ├── task.rs         Manages git worktrees, spawns `claude` in a PTY
+ │                   Reads PTY output → vt100 parser → screen buffer
+ ├── agent.rs        Agent configuration, CLAUDE.md management
+ ├── backend.rs      Process backend (builtin PTY / tmux sessions)
+ ├── diff.rs         Unified diff parser, search, inline comments
+ ├── diff_filter.rs  Diff colorizer (delta integration)
+ ├── shell.rs        Shell mode (suspend / tmux window)
+ ├── config.rs       TOML configuration (~/.config/copse/config.toml)
+ ├── keybind.rs      Key binding definitions and TOML overrides
+ ├── event.rs        AppEvent enum (key, task lifecycle, resize)
+ ├── theme.rs        Color theme from config
+ ├── logging.rs      Log file management
  ├── templates/
  │    └── settings.local.json   Claude Code settings template
  └── ui/
       ├── mod.rs     Layout, status bars, dialogs
       ├── list.rs    Task list panel
       ├── diff.rs    Diff view rendering
-      └── agent.rs   PseudoTerminal widget (tui-term)
+      └── agent.rs   Agent terminal view (tui-term)
 ```
 
 ## Development

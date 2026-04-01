@@ -7,6 +7,7 @@ mod diff_filter;
 mod event;
 mod keybind;
 mod logging;
+mod shell;
 mod task;
 mod theme;
 mod tui;
@@ -57,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     config.agent.validate()?;
     config.backend.validate()?;
     config.diff_filter.validate()?;
+    config.shell_mode.validate()?;
     config.validate_notification_command()?;
 
     let backend = config.backend.clone();

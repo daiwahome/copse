@@ -97,6 +97,23 @@ impl std::fmt::Display for DiffFilter {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShellMode {
+    #[default]
+    Suspend,
+    Tmux,
+}
+
+impl std::fmt::Display for ShellMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShellMode::Suspend => write!(f, "suspend"),
+            ShellMode::Tmux => write!(f, "tmux"),
+        }
+    }
+}
+
 fn config_path() -> anyhow::Result<PathBuf> {
     let strategy = etcetera::base_strategy::Xdg::new()
         .map_err(|e| anyhow::anyhow!("Failed to determine config directory: {e}"))?;
@@ -111,6 +128,8 @@ pub struct Config {
     pub backend: Backend,
     #[serde(default)]
     pub diff_filter: DiffFilter,
+    #[serde(default)]
+    pub shell_mode: ShellMode,
     #[serde(default)]
     pub auto_commit: bool,
     #[serde(default)]
@@ -178,6 +197,7 @@ impl Config {
         out.push_str(&format!("agent = \"{}\"\n", self.agent));
         out.push_str(&format!("backend = \"{}\"\n", self.backend));
         out.push_str(&format!("diff_filter = \"{}\"\n", self.diff_filter));
+        out.push_str(&format!("shell_mode = \"{}\"\n", self.shell_mode));
         out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
         out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
         out.push_str(&format!("log_level = \"{}\"\n", self.log_level));

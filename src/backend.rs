@@ -269,7 +269,7 @@ fn tmux_command_builder() -> CommandBuilder {
     cmd
 }
 
-fn is_tmux_available() -> bool {
+pub fn is_tmux_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
         std::process::Command::new("tmux")

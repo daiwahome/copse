@@ -24,6 +24,7 @@ pub enum TasksAction {
     Kill,
     CloseChildren,
     StartFresh,
+    Shell,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -307,6 +308,7 @@ fn tasks_action_defs() -> &'static [ActionDef<TasksAction>] {
         "kill", "Kill running task" => TasksAction::Kill, ["Ctrl-K"];
         "close-children", "Close child views" => TasksAction::CloseChildren, ["Ctrl-Q"];
         "start-fresh", "Start fresh agent" => TasksAction::StartFresh, ["Ctrl-A"];
+        "shell", "Open shell in worktree" => TasksAction::Shell, ["s"];
     }
 }
 

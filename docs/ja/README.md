@@ -90,21 +90,28 @@ copse
 
 ```
 copse/src
- ├── main.rs      エントリーポイント、SIGTSTP 処理、パニックフック
- ├── tui.rs       Ratatui + Crossterm イベントループ
- ├── app.rs       アプリケーション状態 (タスク、モード、キー処理)
- ├── task.rs      git worktree 管理、PTY で `claude` を起動
- │                PTY 出力 → vt100 パーサー → スクリーンバッファ
- ├── diff.rs      Unified diff パーサー、検索、delta 連携
- ├── config.rs    設定管理 (confy, ~/.config/copse/)
- ├── event.rs     AppEvent enum (キー、タスクライフサイクル、リサイズ)
+ ├── main.rs         エントリーポイント、SIGTSTP 処理、パニックフック
+ ├── tui.rs          Ratatui + Crossterm イベントループ、suspend/resume
+ ├── app.rs          アプリケーション状態 (タスク、ビュー、キー処理)
+ ├── task.rs         git worktree 管理、PTY で `claude` を起動
+ │                   PTY 出力 → vt100 パーサー → スクリーンバッファ
+ ├── agent.rs        エージェント設定、CLAUDE.md 管理
+ ├── backend.rs      プロセスバックエンド (ビルトイン PTY / tmux セッション)
+ ├── diff.rs         Unified diff パーサー、検索、インラインコメント
+ ├── diff_filter.rs  Diff 着色フィルター (delta 連携)
+ ├── shell.rs        シェルモード (suspend / tmux ウィンドウ)
+ ├── config.rs       TOML 設定管理 (~/.config/copse/config.toml)
+ ├── keybind.rs      キーバインド定義と TOML オーバーライド
+ ├── event.rs        AppEvent enum (キー、タスクライフサイクル、リサイズ)
+ ├── theme.rs        設定からのカラーテーマ
+ ├── logging.rs      ログファイル管理
  ├── templates/
  │    └── settings.local.json   Claude Code 設定テンプレート
  └── ui/
       ├── mod.rs     レイアウト、ステータスバー、ダイアログ
       ├── list.rs    タスクリストパネル
       ├── diff.rs    Diff view レンダリング
-      └── agent.rs   PseudoTerminal ウィジェット (tui-term)
+      └── agent.rs   エージェントターミナルビュー (tui-term)
 ```
 
 ## 開発

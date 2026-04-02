@@ -80,9 +80,10 @@ For key bindings and view details, see [Views](docs/en/views.md).
 
 ## Documentation
 
+- [Development Workflow](docs/en/workflow.md) — End-to-end guide from branch creation to PR
+- [Views](docs/en/views.md) — Detailed view descriptions and key bindings
 - [Configuration](docs/en/configuration.md) — Settings, auto-commit, and auto-permissions
 - [Git Mapping](docs/en/git-mapping.md) — How copse concepts map to git commands
-- [Views](docs/en/views.md) — Detailed view descriptions and key bindings
 - [Design Decisions](docs/en/design-decisions.md) — Design choices and rationale
 - [日本語 README](docs/ja/README.md)
 

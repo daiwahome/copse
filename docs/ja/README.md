@@ -80,9 +80,10 @@ copse
 
 ## ドキュメント
 
+- [開発ワークフロー](workflow.md) — ブランチ作成から PR までのガイド
+- [ビュー](views.md) — ビューの詳細説明とキーバインド
 - [設定](configuration.md) — 設定ファイル、自動コミット、自動承認
 - [Git マッピング](git-mapping.md) — copse の概念と git コマンドの対応
-- [ビュー](views.md) — ビューの詳細説明とキーバインド
 - [設計判断](design-decisions.md) — 設計上の判断とその理由
 - [English README](../../README.md)
 

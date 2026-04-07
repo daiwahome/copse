@@ -99,7 +99,10 @@ fn render_single_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(area);
-    let scroll_offset = agent::render(frame, chunks[0], app);
+    let (scroll_offset, cursor_pos) = agent::render(frame, chunks[0], app);
+    if let Some(pos) = cursor_pos {
+        frame.set_cursor_position(pos);
+    }
     render_agent_status_bar(frame, chunks[1], app, true, scroll_offset, true);
 }
 
@@ -152,7 +155,12 @@ fn render_split_tasks_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(right_area);
-    let scroll_offset = agent::render(frame, right_rows[0], app);
+    let (scroll_offset, cursor_pos) = agent::render(frame, right_rows[0], app);
+    if focus == Pane::Right {
+        if let Some(pos) = cursor_pos {
+            frame.set_cursor_position(pos);
+        }
+    }
     render_agent_status_bar(
         frame,
         right_rows[1],
@@ -251,7 +259,12 @@ fn render_split_diff_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(right_area);
-    let scroll_offset = agent::render(frame, right_rows[0], app);
+    let (scroll_offset, cursor_pos) = agent::render(frame, right_rows[0], app);
+    if focus == Pane::Right {
+        if let Some(pos) = cursor_pos {
+            frame.set_cursor_position(pos);
+        }
+    }
     render_agent_status_bar(
         frame,
         right_rows[1],

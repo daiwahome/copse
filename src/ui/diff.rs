@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -176,4 +176,34 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
+
+    // Set cursor position only when editing a comment (IME input needed).
+    // In non-editing mode, leave the cursor hidden to avoid Terminal.app
+    // writing inline pre-edit text into the diff content.
+    if focused && state.is_editing() && state.cursor >= start && state.cursor < end {
+        let mut visual_y = 0usize;
+        for idx in start..state.cursor {
+            visual_y += state.line_visual_height(idx);
+        }
+        // Position at the end of comment lines (below the diff line)
+        visual_y += state.line_visual_height(state.cursor);
+        let cursor_y = area.y + visual_y.saturating_sub(1) as u16;
+
+        // Compute X: prefix width + last line of editing text
+        let editing_text = state
+            .editing_comment
+            .as_ref()
+            .map(|e| e.text.as_str())
+            .unwrap_or("");
+        let last_line = editing_text.split('\n').next_back().unwrap_or("");
+        let cursor_x =
+            area.x + COMMENT_PREFIX.width() as u16 + UnicodeWidthStr::width(last_line) as u16;
+
+        if cursor_y < area.bottom() && cursor_x < area.right() {
+            frame.set_cursor_position(Position {
+                x: cursor_x,
+                y: cursor_y,
+            });
+        }
+    }
 }

@@ -115,6 +115,12 @@ copse/src
       └── agent.rs   Agent terminal view (tui-term)
 ```
 
+## Known Limitations
+
+### Japanese IME positioning in agent view
+
+When using a Japanese IME (Input Method Editor) in the agent view, the composing window may appear at an incorrect position or drift during screen redraws. This is caused by the interaction between ratatui's diff-based rendering and terminal emulators' IME position tracking in alternate screen mode. Committed text is delivered correctly — only the composing window position is affected.
+
 ## Development
 
 ```sh

@@ -24,12 +24,15 @@ impl std::fmt::Display for Agent {
 pub struct ClaudeCodeConfig {
     #[serde(default = "default_permission_mode")]
     pub permission_mode: String,
+    #[serde(default)]
+    pub auto_mode: bool,
 }
 
 impl Default for ClaudeCodeConfig {
     fn default() -> Self {
         Self {
             permission_mode: default_permission_mode(),
+            auto_mode: false,
         }
     }
 }
@@ -207,6 +210,7 @@ impl Config {
             "permission_mode = \"{}\"\n",
             self.claude_code.permission_mode
         ));
+        out.push_str(&format!("auto_mode = {}\n", self.claude_code.auto_mode));
 
         out.push_str("\n[color]\n");
 

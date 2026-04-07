@@ -90,7 +90,9 @@ impl Tui {
                         continue;
                     }
                     match event::read() {
-                        Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
+                        Ok(Event::Key(key))
+                            if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
+                        {
                             if tx.blocking_send(AppEvent::Key(key)).is_err() {
                                 break;
                             }

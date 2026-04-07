@@ -26,6 +26,7 @@ log_level = "info"
 
 [claudecode]
 permission_mode = "default"
+auto_mode = false
 
 [color]
 cursor = { bg = "236" }
@@ -118,9 +119,26 @@ exit-scroll-mode = ["q", "Enter"]
 
 Claude Code 固有のオプション。
 
-| オプション        | 型     | デフォルト  | 説明                                        |
-| ----------------- | ------ | ----------- | ------------------------------------------- |
-| `permission_mode` | string | `"default"` | 全タスクの Claude Code パーミッションモード |
+| オプション        | 型     | デフォルト  | 説明                                                                    |
+| ----------------- | ------ | ----------- | ----------------------------------------------------------------------- |
+| `permission_mode` | string | `"default"` | 全タスクの Claude Code パーミッションモード                             |
+| `auto_mode`       | bool   | `false`     | Claude Code に `--enable-auto-mode` を渡す (research preview、下記参照) |
+
+### Auto Mode
+
+`auto_mode = true` にすると、copse は全ての `claude` 起動時に `--enable-auto-mode` を渡す。これにより `Shift+Tab` のパーミッションモードサイクルに `auto` が追加され、バックグラウンドの分類器 (Sonnet 4.6) が各ツール呼び出しの承認を判断する。
+
+> **Research Preview** — この機能はまだ安定版ではなく、今後変更される可能性がある。
+
+**利用条件** (全て満たす必要あり):
+
+| 条件       | 詳細                                                                   |
+| ---------- | ---------------------------------------------------------------------- |
+| プラン     | Team, Enterprise, または API のみ (Pro / Max では利用不可)             |
+| 管理者設定 | Team/Enterprise では管理者が Claude Code admin settings で有効化が必要 |
+| モデル     | Sonnet 4.6 または Opus 4.6 のみ                                        |
+| プロバイダ | Anthropic API のみ (Bedrock, Vertex, Foundry は不可)                   |
+| バージョン | Claude Code v2.1.83 以降                                               |
 
 ### Permission Mode
 

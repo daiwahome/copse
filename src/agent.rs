@@ -37,6 +37,9 @@ impl Agent {
                 }
                 args.push("--permission-mode".to_string());
                 args.push(config.claude_code.permission_mode.clone());
+                if config.claude_code.auto_mode {
+                    args.push("--enable-auto-mode".to_string());
+                }
                 args
             }
         }
@@ -253,6 +256,33 @@ mod tests {
         config.claude_code.permission_mode = "plan".to_string();
         let args = Agent::ClaudeCode.command_args(true, &config);
         assert_eq!(args, vec!["--continue", "--permission-mode", "plan"]);
+    }
+
+    #[test]
+    fn claudecode_command_args_auto_mode() {
+        let mut config = Config::default();
+        config.claude_code.auto_mode = true;
+        let args = Agent::ClaudeCode.command_args(false, &config);
+        assert_eq!(
+            args,
+            vec!["--permission-mode", "default", "--enable-auto-mode"]
+        );
+    }
+
+    #[test]
+    fn claudecode_command_args_continue_auto_mode() {
+        let mut config = Config::default();
+        config.claude_code.auto_mode = true;
+        let args = Agent::ClaudeCode.command_args(true, &config);
+        assert_eq!(
+            args,
+            vec![
+                "--continue",
+                "--permission-mode",
+                "default",
+                "--enable-auto-mode"
+            ]
+        );
     }
 
     // -- merge_settings tests --

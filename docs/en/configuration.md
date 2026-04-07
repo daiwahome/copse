@@ -26,6 +26,7 @@ log_level = "info"
 
 [claudecode]
 permission_mode = "default"
+auto_mode = false
 
 [color]
 cursor = { bg = "236" }
@@ -118,9 +119,26 @@ exit-scroll-mode = ["q", "Enter"]
 
 Agent-specific options for Claude Code.
 
-| Option            | Type   | Default     | Description                               |
-| ----------------- | ------ | ----------- | ----------------------------------------- |
-| `permission_mode` | string | `"default"` | Claude Code permission mode for all tasks |
+| Option            | Type   | Default     | Description                                                            |
+| ----------------- | ------ | ----------- | ---------------------------------------------------------------------- |
+| `permission_mode` | string | `"default"` | Claude Code permission mode for all tasks                              |
+| `auto_mode`       | bool   | `false`     | Pass `--enable-auto-mode` to Claude Code (research preview, see below) |
+
+### Auto Mode
+
+When `auto_mode = true`, copse passes `--enable-auto-mode` to every `claude` invocation. This adds `auto` to the `Shift+Tab` permission mode cycle, where a background classifier (Sonnet 4.6) decides whether to approve each tool call.
+
+> **Research Preview** — This feature is not yet stable and may change in future releases.
+
+**Requirements** (all must be met):
+
+| Requirement   | Details                                                             |
+| ------------- | ------------------------------------------------------------------- |
+| Plan          | Team, Enterprise, or API only (not available on Pro / Max)          |
+| Admin setting | Team/Enterprise admins must enable it in Claude Code admin settings |
+| Model         | Sonnet 4.6 or Opus 4.6 only                                         |
+| Provider      | Anthropic API only (not Bedrock, Vertex, or Foundry)                |
+| Version       | Claude Code v2.1.83 or later                                        |
 
 ### Permission Mode
 

@@ -9,7 +9,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 use etcetera::BaseStrategy;
 
-use crate::config::{Backend, Config};
+use crate::config::{Agent, Backend, Config};
 use crate::event::{AppEvent, TaskId};
 
 const SCROLLBACK_LEN: usize = 10_000;
@@ -36,8 +36,10 @@ pub struct Task {
     pub name: String,
     pub upstream: Option<String>,
     pub status: TaskStatus,
-    /// Whether a continuable Claude session exists for this task.
-    /// When true, `--continue` is passed on the next launch.
+    /// Which agent this task runs.
+    pub agent: Agent,
+    /// Whether a continuable agent session exists for this task.
+    /// When true, session-continuation flags are passed on the next launch.
     pub has_session: bool,
     /// Cached number of commits ahead of upstream (None = not yet computed)
     pub commits_ahead: Option<usize>,
@@ -48,7 +50,7 @@ pub struct Task {
     pub worktree_path: PathBuf,
     /// Parses ANSI sequences and holds the screen buffer
     pub parser: Arc<Mutex<vt100::Parser>>,
-    /// Cached: whether Claude appears to be waiting for user input
+    /// Cached: whether the agent appears to be waiting for user input
     pub waiting_for_input: bool,
     /// Scrollback offset for the agent view (0 = live view)
     pub scroll_offset: usize,
@@ -93,7 +95,7 @@ impl Task {
             .unwrap_or_else(|e| e.into_inner())
             .screen()
             .clone();
-        self.waiting_for_input = !has_active_spinner(&screen);
+        self.waiting_for_input = !self.agent.is_processing(&screen);
     }
 
     /// Derive the worktree path for a given task name.
@@ -101,15 +103,17 @@ impl Task {
         worktree_base_dir.join(name)
     }
 
-    /// Path to the session marker file for a given task name.
+    /// Path to the session marker file for a given task name and agent.
+    /// Includes the agent name so that switching agents does not inherit
+    /// a stale session marker from a different agent.
     /// Placed in `worktree_base_dir` (outside the worktree) to avoid git tracking.
-    fn session_marker_path_for(worktree_base_dir: &Path, name: &str) -> PathBuf {
-        worktree_base_dir.join(format!("{name}.has-session"))
+    fn session_marker_path_for(worktree_base_dir: &Path, name: &str, agent: &Agent) -> PathBuf {
+        worktree_base_dir.join(format!("{name}.{agent}.has-session"))
     }
 
     fn session_marker_path(&self) -> PathBuf {
         let base = self.worktree_path.parent().unwrap_or(&self.worktree_path);
-        Self::session_marker_path_for(base, &self.name)
+        Self::session_marker_path_for(base, &self.name, &self.agent)
     }
 
     /// Branch name used for a task: `copse/<name>`
@@ -352,6 +356,7 @@ impl Task {
         name: String,
         upstream: String,
         worktree_base_dir: &Path,
+        agent: Agent,
         backend: Backend,
         rows: u16,
         cols: u16,
@@ -362,6 +367,7 @@ impl Task {
             name,
             upstream: Some(upstream),
             status: TaskStatus::Stopped,
+            agent,
             has_session: false,
             commits_ahead: None,
             upstream_exists: true,
@@ -383,12 +389,13 @@ impl Task {
         name: String,
         repo_root: &Path,
         worktree_base_dir: &Path,
+        agent: Agent,
         backend: Backend,
         rows: u16,
         cols: u16,
     ) -> Self {
         let upstream = Self::load_upstream(repo_root, &name);
-        let has_session = Self::session_marker_path_for(worktree_base_dir, &name).exists();
+        let has_session = Self::session_marker_path_for(worktree_base_dir, &name, &agent).exists();
         let commits_ahead = upstream
             .as_ref()
             .and_then(|u| Self::compute_commits_ahead(repo_root, &name, u));
@@ -401,6 +408,7 @@ impl Task {
             name,
             upstream,
             status: TaskStatus::Stopped,
+            agent,
             has_session,
             commits_ahead,
             upstream_exists,
@@ -528,6 +536,7 @@ impl Task {
             name,
             upstream,
             status: TaskStatus::Running,
+            agent,
             has_session: false,
             commits_ahead: None,
             upstream_exists: true,
@@ -549,6 +558,7 @@ impl Task {
         repo_root: &Path,
         worktree_base_dir: &Path,
         name: &str,
+        agent: &Agent,
         backend: &Backend,
     ) -> anyhow::Result<()> {
         // Kill any running backend session for this task
@@ -588,7 +598,11 @@ impl Task {
         }
 
         // Clean up session marker
-        let _ = std::fs::remove_file(Self::session_marker_path_for(worktree_base_dir, name));
+        let _ = std::fs::remove_file(Self::session_marker_path_for(
+            worktree_base_dir,
+            name,
+            agent,
+        ));
 
         Ok(())
     }
@@ -767,7 +781,7 @@ impl Task {
     }
 
     /// Detach from the PTY without killing the backend session.
-    /// The Claude process continues running in the background.
+    /// The agent process continues running in the background.
     /// Kills the PTY child (e.g. `tmux attach-session`) so the reader task
     /// gets EOF and exits cleanly. This does NOT kill the backend session.
     pub fn detach(&mut self) {
@@ -907,107 +921,9 @@ fn parse_remote_url(url: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path_str))
 }
 
-/// Claude Code spinner characters used for animation frames.
-const SPINNER_CHARS: &[char] = &['✢', '✳', '✶', '✻', '✽', '·'];
-
-/// Scan the PTY screen for a colored spinner character, indicating active processing.
-///
-/// Returns `true` when a spinner character with a non-default foreground color
-/// is found in the visible rows (scanned bottom-to-top, up to 50 non-empty rows).
-fn has_active_spinner(screen: &vt100::Screen) -> bool {
-    let rows = screen.size().0 as usize;
-    let cols = screen.size().1 as usize;
-    let mut scanned = 0;
-    for r in (0..rows).rev() {
-        let row_text: String = (0..cols)
-            .filter_map(|c| {
-                screen
-                    .cell(r as u16, c as u16)
-                    .map(|cell| cell.contents().to_string())
-            })
-            .collect();
-        let trimmed = row_text.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Some(first_char) = trimmed.chars().next() {
-            if SPINNER_CHARS.contains(&first_char) {
-                for c in 0..cols {
-                    if let Some(cell) = screen.cell(r as u16, c as u16) {
-                        if let Some(ch) = cell.contents().chars().next() {
-                            if SPINNER_CHARS.contains(&ch) {
-                                if !matches!(cell.fgcolor(), vt100::Color::Default) {
-                                    return true;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        scanned += 1;
-        if scanned >= 50 {
-            break;
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_screen(rows: u16, cols: u16, lines: &[&str]) -> vt100::Screen {
-        let mut parser = vt100::Parser::new(rows, cols, 0);
-        for line in lines {
-            parser.process(line.as_bytes());
-        }
-        parser.screen().clone()
-    }
-
-    fn colored(text: &str) -> String {
-        // ANSI: set foreground to color index 174
-        format!("\x1b[38;5;174m{text}\x1b[0m")
-    }
-
-    #[test]
-    fn spinner_detected_when_colored() {
-        let line = colored("✢ Lollygagging…");
-        let screen = make_screen(10, 40, &[&line]);
-        assert!(has_active_spinner(&screen));
-    }
-
-    #[test]
-    fn spinner_not_detected_when_default_color() {
-        let screen = make_screen(10, 40, &["✻ Worked for 55s"]);
-        assert!(!has_active_spinner(&screen));
-    }
-
-    #[test]
-    fn no_spinner_on_empty_screen() {
-        let screen = make_screen(10, 40, &[]);
-        assert!(!has_active_spinner(&screen));
-    }
-
-    #[test]
-    fn no_spinner_on_plain_text() {
-        let screen = make_screen(10, 40, &["some output\r\nmore output\r\n"]);
-        assert!(!has_active_spinner(&screen));
-    }
-
-    #[test]
-    fn middle_dot_spinner_detected() {
-        let line = colored("· Thinking…");
-        let screen = make_screen(10, 40, &[&line]);
-        assert!(has_active_spinner(&screen));
-    }
-
-    #[test]
-    fn prompt_not_detected_as_spinner() {
-        let screen = make_screen(10, 40, &["❯ hello"]);
-        assert!(!has_active_spinner(&screen));
-    }
 
     #[test]
     fn parse_ssh_remote_url() {

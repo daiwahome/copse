@@ -118,7 +118,7 @@ When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`).
 
 ## Agent View
 
-Shows the claude process output. Keystrokes are forwarded to claude when the agent pane has focus.
+Shows the agent process output. Keystrokes are forwarded to the agent when the agent pane has focus.
 
 ### Layout Modes
 
@@ -148,7 +148,7 @@ When a diff is also open, the layout becomes `[Diff | Agent]`: diff on the left,
 | `Ctrl-b`  | Scroll up one page (enter scroll mode)    | cursor left  |
 | `Ctrl-f`  | Scroll down one page (enter scroll mode)  | cursor right |
 | `Ctrl-g`  | Show help dialog                          |              |
-| Any other | Forward to Claude Code                    |              |
+| Any other | Forward to the agent                      |              |
 
 #### Scroll mode (builtin backend)
 

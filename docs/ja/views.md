@@ -118,7 +118,7 @@ Agent も開いている場合、レイアウトは `[Diff | Agent]` になる: 
 
 ## Agent View
 
-claude プロセスの出力を表示する。Agent ペインにフォーカスがある時、キー入力は claude に転送される。
+エージェントプロセスの出力を表示する。Agent ペインにフォーカスがある時、キー入力はエージェントに転送される。
 
 ### レイアウトモード
 
@@ -148,7 +148,7 @@ Diff も開いている場合、レイアウトは `[Diff | Agent]` になる: �
 | `Ctrl-b` | 1 ページ上にスクロール (scroll mode に入る)  | cursor left  |
 | `Ctrl-f` | 1 ページ下にスクロール (scroll mode に入る)  | cursor right |
 | `Ctrl-g` | ヘルプダイアログを表示                       |              |
-| その他   | Claude Code に転送                           |              |
+| その他   | エージェントに転送                           |              |
 
 #### Scroll mode (builtin backend)
 

@@ -626,13 +626,15 @@ fn render_confirm_quit_dialog(frame: &mut Frame, area: Rect, app: &App) {
 fn render_confirm_kill_dialog(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::layout::Alignment;
 
-    let name = app.selected_task().map(|t| t.name.as_str()).unwrap_or("?");
+    let task = app.selected_task();
+    let name = task.map(|t| t.name.as_str()).unwrap_or("?");
+    let agent_name = task.map(|t| t.agent.display_name()).unwrap_or("agent");
 
     let Some(inner) = create_centered_dialog(frame, area, " Kill task? ", 52, 6, Color::Red) else {
         return;
     };
 
-    let msg = format!("Terminate claude in '{name}'?");
+    let msg = format!("Terminate {agent_name} in '{name}'?");
     let text = Paragraph::new(vec![
         Line::from(Span::styled(msg, Style::default().fg(Color::Yellow))),
         Line::from(""),

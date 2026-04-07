@@ -9,7 +9,7 @@ This guide walks through the full development cycle — from creating a branch t
          ─────────────────────────────────────
 [copse]  2. Launch copse
 [copse]  3. Create a task (select the feature branch as upstream)
-[copse]  4. Start the agent — Claude does the work
+[copse]  4. Start the agent — the agent does the work
 [copse]  5. Review the diff, send review comments
 [copse]  6. Iterate (agent responds to the review)
 [copse]  7. Merge the task into upstream (ff or squash)
@@ -30,7 +30,7 @@ copse --init
 auto_commit = true
 ```
 
-With `auto_commit` enabled, Claude's changes are committed automatically after each response. This keeps every iteration preserved in git history. See [Configuration](configuration.md#auto-commit) for details.
+With `auto_commit` enabled, the agent's changes are committed automatically after each response. This keeps every iteration preserved in git history. See [Configuration](configuration.md#auto-commit) for details.
 
 ## Step by Step
 
@@ -60,7 +60,7 @@ copse creates a branch `copse/<name>` and a worktree, forked from the selected u
 
 ### 4. Start the agent
 
-Press `a` on the task to start Claude Code. The Agent view opens and Claude begins working in the task's worktree.
+Press `a` on the task to start the agent. The Agent view opens and the agent begins working in the task's worktree.
 
 ### 5. Review changes
 

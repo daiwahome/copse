@@ -10,12 +10,14 @@ use crate::keybind::RawKeyBindings;
 pub enum Agent {
     #[default]
     ClaudeCode,
+    Codex,
 }
 
 impl std::fmt::Display for Agent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Agent::ClaudeCode => write!(f, "claudecode"),
+            Agent::Codex => write!(f, "codex"),
         }
     }
 }
@@ -39,6 +41,30 @@ impl Default for ClaudeCodeConfig {
 
 fn default_permission_mode() -> String {
     "default".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CodexConfig {
+    #[serde(default)]
+    pub sandbox: Option<String>,
+    #[serde(default)]
+    pub approval: Option<String>,
+    #[serde(default = "default_true")]
+    pub search: bool,
+}
+
+impl Default for CodexConfig {
+    fn default() -> Self {
+        Self {
+            sandbox: None,
+            approval: None,
+            search: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -142,6 +168,8 @@ pub struct Config {
     #[serde(default, rename = "claudecode")]
     pub claude_code: ClaudeCodeConfig,
     #[serde(default)]
+    pub codex: CodexConfig,
+    #[serde(default)]
     pub color: ColorConfig,
     #[serde(default)]
     pub keys: RawKeyBindings,
@@ -211,6 +239,19 @@ impl Config {
             self.claude_code.permission_mode
         ));
         out.push_str(&format!("auto_mode = {}\n", self.claude_code.auto_mode));
+
+        out.push_str("\n[codex]\n");
+        if let Some(ref sandbox) = self.codex.sandbox {
+            out.push_str(&format!("sandbox = \"{sandbox}\"\n"));
+        } else {
+            out.push_str("# sandbox = \"workspace-write\"\n");
+        }
+        if let Some(ref approval) = self.codex.approval {
+            out.push_str(&format!("approval = \"{approval}\"\n"));
+        } else {
+            out.push_str("# approval = \"on-request\"\n");
+        }
+        out.push_str(&format!("search = {}\n", self.codex.search));
 
         out.push_str("\n[color]\n");
 

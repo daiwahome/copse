@@ -9,7 +9,7 @@
          ─────────────────────────────────────
 [copse]  2. copse を起動
 [copse]  3. task を作成 (feature branch を upstream に選択)
-[copse]  4. agent を開始 — Claude が作業
+[copse]  4. agent を開始 — エージェントが作業
 [copse]  5. diff を確認、レビューコメントを送信
 [copse]  6. 反復 (agent がレビューに応答)
 [copse]  7. task を upstream にマージ (ff or squash)
@@ -30,7 +30,7 @@ copse --init
 auto_commit = true
 ```
 
-`auto_commit` を有効にすると、Claude の変更が応答ごとに自動コミットされる。これにより各イテレーションが git 履歴に保存される。詳細は[設定](configuration.md#auto-commit)を参照。
+`auto_commit` を有効にすると、エージェントの変更が応答ごとに自動コミットされる。これにより各イテレーションが git 履歴に保存される。詳細は[設定](configuration.md#auto-commit)を参照。
 
 ## 手順
 
@@ -60,7 +60,7 @@ copse が選択した upstream から分岐した `copse/<name>` ブランチと
 
 ### 4. agent を開始
 
-タスク上で `a` を押して Claude Code を開始する。Agent view が開き、Claude がタスクの worktree で作業を始める。
+タスク上で `a` を押してエージェントを開始する。Agent view が開き、エージェントがタスクの worktree で作業を始める。
 
 ### 5. 変更を確認
 

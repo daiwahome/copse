@@ -91,9 +91,9 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 | `n`       | Next search match                                     |
 | `N`       | Previous search match                                 |
 | `@`       | Jump to next hunk (sets pattern to `^@@`)             |
-| `R`       | Refresh diff                                          |
+| `R`       | Refresh diff (preserves cursor position and comments) |
 | `O`       | Toggle split ↔ fullscreen                             |
-| `q`       | Close diff view                                       |
+| `q`       | Close diff view (state is restored on reopen)         |
 | `o`       | Add review comment on current line (inline editing)   |
 | `e`       | Edit existing review comment                          |
 | `!`       | Delete review comment on current line                 |

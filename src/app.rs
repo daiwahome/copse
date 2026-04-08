@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     config::Config,
-    diff::DiffState,
+    diff::{DiffState, SavedDiffState},
     event::{AppEvent, TaskId},
     keybind::{self, AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
     task::{SpawnParams, Task},
@@ -106,6 +108,8 @@ pub struct App {
     pub theme: Theme,
     /// Resolved key bindings (defaults + user overrides)
     pub key_bindings: KeyBindings,
+    /// Cached diff view state per task name (survives close/reopen)
+    diff_state_cache: HashMap<String, SavedDiffState>,
 }
 
 impl App {
@@ -139,6 +143,7 @@ impl App {
             dialog: None,
             theme,
             key_bindings,
+            diff_state_cache: HashMap::new(),
         }
     }
 
@@ -302,6 +307,8 @@ impl App {
             }
             AppEvent::TaskDeleted(id) => {
                 if let Some(pos) = self.tasks.iter().position(|t| t.id == id) {
+                    let task_name = self.tasks[pos].name.clone();
+                    self.diff_state_cache.remove(&task_name);
                     self.tasks.remove(pos);
                     if self.selected_index >= self.tasks.len() && !self.tasks.is_empty() {
                         self.selected_index = self.tasks.len() - 1;
@@ -927,13 +934,18 @@ impl App {
                             self.last_error = Some("No commits ahead of upstream".to_string());
                         } else {
                             let upstream = task.upstream.as_ref().unwrap();
+                            let task_name = task.name.clone();
                             match DiffState::from_task(
                                 &self.repo_root,
-                                &task.name,
+                                &task_name,
                                 upstream,
                                 &self.config.diff_filter,
                             ) {
-                                Ok(state) => {
+                                Ok(mut state) => {
+                                    // Restore cached state if available
+                                    if let Some(saved) = self.diff_state_cache.remove(&task_name) {
+                                        state.restore_state(&saved);
+                                    }
                                     self.push_diff(state);
                                     self.fullscreen = None;
                                     self.focus = self.pane_of(View::Diff);
@@ -1316,27 +1328,48 @@ impl App {
 
     /// Update diff_state for the currently selected task.
     /// If the task has no commits ahead, clears diff_state.
+    /// Preserves cursor position, comments, and search mode across refresh.
     fn update_diff_for_selected_task(&mut self) {
-        if let Some(task) = self.tasks.get(self.selected_index) {
-            let ahead = task.commits_ahead.unwrap_or(0);
-            if ahead == 0 || !task.upstream_exists {
-                self.close_diff();
-            } else {
-                let upstream = task.upstream.as_ref().unwrap();
-                match DiffState::from_task(
-                    &self.repo_root,
-                    &task.name,
-                    upstream,
-                    &self.config.diff_filter,
-                ) {
-                    Ok(state) => {
-                        self.update_diff(state);
-                    }
-                    Err(e) => {
-                        self.last_error = Some(format!("Failed to get diff: {e}"));
-                        self.close_diff();
+        let Some(task) = self.tasks.get(self.selected_index) else {
+            return;
+        };
+        let ahead = task.commits_ahead.unwrap_or(0);
+        let upstream_exists = task.upstream_exists;
+        let upstream = task.upstream.clone();
+        let task_name = task.name.clone();
+        // Drop the immutable borrow of self.tasks
+
+        if ahead == 0 || !upstream_exists {
+            self.close_diff();
+            return;
+        }
+
+        // Cancel any in-progress editing before saving state
+        if let Some(ds) = self.diff_state_mut() {
+            ds.cancel_editing();
+        }
+        // Save current state before replacing
+        let saved = self.diff_state().map(|ds| ds.save_state());
+
+        let upstream = upstream.unwrap();
+        match DiffState::from_task(
+            &self.repo_root,
+            &task_name,
+            &upstream,
+            &self.config.diff_filter,
+        ) {
+            Ok(state) => {
+                self.update_diff(state);
+                // Restore saved state into the new DiffState
+                if let Some(saved) = saved {
+                    if let Some(ds) = self.diff_state_mut() {
+                        ds.restore_state(&saved);
                     }
                 }
+            }
+            Err(e) => {
+                self.last_error = Some(format!("Failed to get diff: {e}"));
+                self.close_diff();
             }
         }
     }
@@ -1511,6 +1544,16 @@ impl App {
     // -- State transition helpers --
 
     fn close_diff(&mut self) {
+        // Save state to cache before removing
+        let saved = if let Some(ds) = self.diff_state_mut() {
+            ds.cancel_editing();
+            Some(ds.save_state())
+        } else {
+            None
+        };
+        if let Some(saved) = saved {
+            self.diff_state_cache.insert(saved.task_name.clone(), saved);
+        }
         self.view_stack.retain(|v| v.view() != View::Diff);
         if self.fullscreen == Some(View::Diff) {
             self.fullscreen = None;

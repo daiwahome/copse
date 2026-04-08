@@ -955,11 +955,8 @@ fn render_help_dialog(frame: &mut Frame, area: Rect, entries: &[(String, &str)])
 
     let key_col_width = entries.iter().map(|(k, _)| k.width()).max().unwrap_or(0);
 
-    let content_width = entries
-        .iter()
-        .map(|(k, d)| k.width() + 3 + d.width()) // key + "   " + desc
-        .max()
-        .unwrap_or(20);
+    let max_desc_width = entries.iter().map(|(_, d)| d.width()).max().unwrap_or(0);
+    let content_width = key_col_width + 5 + max_desc_width; // " " + key_col + pad + "   " + desc
     let dialog_width = (content_width as u16 + 4).min(area.width.saturating_sub(4)); // +4 for border+padding
     let dialog_height = (entries.len() as u16 + 2).min(area.height); // +2 for border
 

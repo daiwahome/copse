@@ -21,6 +21,7 @@ backend = "builtin"
 diff_filter = "none"
 auto_commit = false
 auto_permissions = false
+show_line_numbers = false
 log_level = "info"
 # notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
 
@@ -94,6 +95,8 @@ edit-comment = ["e"]
 delete-comment = ["!"]
 send-review = ["S"]
 next-comment = ["c"]
+go-to-top = ["g"]
+go-to-bottom = ["G"]
 
 [keys.agent]
 fullscreen = ["Ctrl-O"]
@@ -117,6 +120,7 @@ exit-scroll-mode = ["q", "Enter"]
 | `shell_mode`           | string          | `"suspend"`    | Shell open method: `"suspend"` or `"tmux"`                              |
 | `auto_commit`          | bool            | `false`        | Auto-commit changes after each agent response                           |
 | `auto_permissions`     | bool            | `false`        | Auto-approve safe commands in the agent                                 |
+| `show_line_numbers`    | bool            | `false`        | Show old/new file line numbers in diff gutter                           |
 | `log_level`            | string          | `"info"`       | Log level: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"` |
 | `notification_command` | string (option) | —              | Command to run when the agent is waiting for user input                 |
 

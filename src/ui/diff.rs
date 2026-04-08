@@ -55,8 +55,59 @@ fn render_comment_lines(lines: &mut Vec<Line>, text: &str, width: usize, is_edit
     }
 }
 
+/// Compute the digit width needed for a column of line numbers.
+fn digit_width(max_no: usize) -> usize {
+    if max_no == 0 {
+        return 0;
+    }
+    max_no.ilog10() as usize + 1
+}
+
+/// Total gutter width: old_digits + space + new_digits + separator.
+/// Format: `{old} {new} ` (two columns + trailing separator).
+/// Uses cached max values from DiffState to avoid per-frame full scans.
+fn gutter_total_width(state: &DiffState) -> (usize, usize, usize) {
+    let old_w = digit_width(state.max_old_line_no);
+    let new_w = digit_width(state.max_new_line_no);
+    if old_w == 0 && new_w == 0 {
+        return (0, 0, 0);
+    }
+    // total = old_digits + " " + new_digits + " "
+    (old_w, new_w, old_w + 1 + new_w + 1)
+}
+
+/// Build gutter span for a single diff line (old + new columns).
+fn gutter_span(
+    old_no: Option<usize>,
+    new_no: Option<usize>,
+    old_w: usize,
+    new_w: usize,
+    total_w: usize,
+) -> Span<'static> {
+    let gutter_style = Style::default().fg(Color::DarkGray);
+    if total_w == 0 {
+        return Span::raw("");
+    }
+    let old_str = match old_no {
+        Some(n) => format!("{n:>old_w$}"),
+        None => " ".repeat(old_w),
+    };
+    let new_str = match new_no {
+        Some(n) => format!("{n:>new_w$}"),
+        None => " ".repeat(new_w),
+    };
+    Span::styled(format!("{old_str} {new_str} "), gutter_style)
+}
+
 /// Render the diff view with inline comment display.
-pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: bool, theme: &Theme) {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut DiffState,
+    focused: bool,
+    theme: &Theme,
+    show_line_numbers: bool,
+) {
     let height = area.height as usize;
     if height == 0 || state.lines.is_empty() {
         return;
@@ -65,7 +116,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
     // Ensure cursor is visible (accounts for comment visual heights)
     state.ensure_cursor_visible(height);
 
+    let (old_w, new_w, gutter_w) = if show_line_numbers {
+        gutter_total_width(state)
+    } else {
+        (0, 0, 0)
+    };
     let width = area.width as usize;
+    let content_width = width.saturating_sub(gutter_w);
 
     // Compute which lines fit in the viewport, accounting for comment lines
     let start = state.scroll_offset;
@@ -88,6 +145,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
         let is_search_match = state.line_matches_search(idx);
         let is_editing = is_cursor && state.is_editing();
 
+        let gutter = gutter_span(line.old_line_no, line.new_line_no, old_w, new_w, gutter_w);
+
         // Render the diff line itself
         if let Some(ansi_line) = &line.ansi_line {
             // Delta-colored rendering
@@ -107,14 +166,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
                     .collect();
             }
 
-            // Pad to full width
+            // Pad to content width
             let content_len: usize = spans.iter().map(|s| s.content.width()).sum();
-            let pad = width.saturating_sub(content_len);
+            let pad = content_width.saturating_sub(content_len);
             if pad > 0 {
                 let pad_style = spans.last().map(|s| s.style).unwrap_or_default();
                 spans.push(Span::styled(" ".repeat(pad), pad_style));
             }
 
+            // Prepend gutter
+            spans.insert(0, gutter);
             lines.push(Line::from(spans));
         } else {
             // Fallback: original plain-color rendering
@@ -146,13 +207,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
             };
 
             if is_cursor || is_search_match {
-                let pad = width.saturating_sub(display_text.width());
-                lines.push(Line::from(Span::styled(
-                    format!("{display_text}{}", " ".repeat(pad)),
-                    final_style,
-                )));
+                let pad = content_width.saturating_sub(display_text.width());
+                lines.push(Line::from(vec![
+                    gutter,
+                    Span::styled(format!("{display_text}{}", " ".repeat(pad)), final_style),
+                ]));
             } else {
-                lines.push(Line::from(Span::styled(display_text, final_style)));
+                lines.push(Line::from(vec![
+                    gutter,
+                    Span::styled(display_text, final_style),
+                ]));
             }
         }
 
@@ -190,6 +254,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut DiffState, focused: boo
         let cursor_y = area.y + visual_y.saturating_sub(1) as u16;
 
         // Compute X: prefix width + last line of editing text
+        // Note: comment lines are rendered without gutter prefix, so gutter_w is NOT added here.
         let editing_text = state
             .editing_comment
             .as_ref()

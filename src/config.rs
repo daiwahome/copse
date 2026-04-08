@@ -164,6 +164,8 @@ pub struct Config {
     #[serde(default)]
     pub auto_permissions: bool,
     #[serde(default)]
+    pub show_line_numbers: bool,
+    #[serde(default)]
     pub log_level: LogLevel,
     #[serde(default, rename = "claudecode")]
     pub claude_code: ClaudeCodeConfig,
@@ -231,6 +233,7 @@ impl Config {
         out.push_str(&format!("shell_mode = \"{}\"\n", self.shell_mode));
         out.push_str(&format!("auto_commit = {}\n", self.auto_commit));
         out.push_str(&format!("auto_permissions = {}\n", self.auto_permissions));
+        out.push_str(&format!("show_line_numbers = {}\n", self.show_line_numbers));
         out.push_str(&format!("log_level = \"{}\"\n", self.log_level));
         out.push_str("# notification_command = \"osascript -e 'display notification \\\"Needs input\\\" with title \\\"Copse\\\"'\"\n");
         out.push_str("\n[claudecode]\n");

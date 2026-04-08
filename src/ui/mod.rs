@@ -113,7 +113,14 @@ fn render_single_diff(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(area);
     if let Some(state) = diff_state_mut(&mut app.view_stack) {
-        diff::render(frame, chunks[0], state, true, &app.theme);
+        diff::render(
+            frame,
+            chunks[0],
+            state,
+            true,
+            &app.theme,
+            app.config.show_line_numbers,
+        );
     }
     render_diff_status_bar(frame, chunks[1], app, true);
     render_diff_overlay(frame, chunks[0], app);
@@ -214,6 +221,7 @@ fn render_split_tasks_diff(frame: &mut Frame, area: Rect, app: &mut App) {
             state,
             focus == Pane::Right,
             &app.theme,
+            app.config.show_line_numbers,
         );
     }
     render_diff_status_bar(frame, right_rows[1], app, focus == Pane::Right);
@@ -249,7 +257,14 @@ fn render_split_diff_agent(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Fill(1), Constraint::Length(1)])
         .split(left_area);
     if let Some(state) = diff_state_mut(&mut app.view_stack) {
-        diff::render(frame, left_rows[0], state, focus == Pane::Left, &app.theme);
+        diff::render(
+            frame,
+            left_rows[0],
+            state,
+            focus == Pane::Left,
+            &app.theme,
+            app.config.show_line_numbers,
+        );
     }
     render_diff_status_bar(frame, left_rows[1], app, focus == Pane::Left);
     render_diff_overlay(frame, left_rows[0], app);

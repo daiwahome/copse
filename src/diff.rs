@@ -20,6 +20,10 @@ pub struct DiffLine {
     pub content: String,
     /// ANSI-colored line from delta (None = no delta available)
     pub ansi_line: Option<Line<'static>>,
+    /// Old-side file line number (Context/Removed lines only)
+    pub old_line_no: Option<usize>,
+    /// New-side file line number (Context/Added lines only)
+    pub new_line_no: Option<usize>,
 }
 
 impl std::fmt::Debug for DiffLine {
@@ -28,6 +32,8 @@ impl std::fmt::Debug for DiffLine {
             .field("kind", &self.kind)
             .field("content", &self.content)
             .field("ansi_line", &self.ansi_line.as_ref().map(|_| "..."))
+            .field("old_line_no", &self.old_line_no)
+            .field("new_line_no", &self.new_line_no)
             .finish()
     }
 }
@@ -98,6 +104,10 @@ pub struct DiffState {
     pub comments: Vec<ReviewComment>,
     /// Currently editing a comment inline (at cursor position)
     pub editing_comment: Option<EditingComment>,
+    /// Cached max old-side line number (for gutter width calculation)
+    pub max_old_line_no: usize,
+    /// Cached max new-side line number (for gutter width calculation)
+    pub max_new_line_no: usize,
 }
 
 impl DiffState {
@@ -141,6 +151,8 @@ impl DiffState {
             None => Vec::new(),
         };
         let mut ansi_iter = ansi_lines.into_iter();
+        let mut old_line_counter: usize = 0;
+        let mut new_line_counter: usize = 0;
 
         for raw_line in raw_diff.lines() {
             let ansi_line = ansi_iter.next().flatten();
@@ -154,39 +166,73 @@ impl DiffState {
                     kind: DiffLineKind::FileHeader,
                     content: raw_line.to_string(),
                     ansi_line,
+                    old_line_no: None,
+                    new_line_no: None,
                 });
             } else if raw_line.starts_with("@@") {
+                let (old_start, new_start) = parse_hunk_starts(raw_line);
+                old_line_counter = old_start;
+                new_line_counter = new_start;
                 lines.push(DiffLine {
                     kind: DiffLineKind::HunkHeader,
                     content: raw_line.to_string(),
                     ansi_line,
+                    old_line_no: None,
+                    new_line_no: None,
                 });
             } else if let Some(rest) = raw_line.strip_prefix('+') {
+                let new_no = new_line_counter;
+                new_line_counter += 1;
                 lines.push(DiffLine {
                     kind: DiffLineKind::Added,
                     content: rest.to_string(),
                     ansi_line,
+                    old_line_no: None,
+                    new_line_no: Some(new_no),
                 });
             } else if let Some(rest) = raw_line.strip_prefix('-') {
+                let old_no = old_line_counter;
+                old_line_counter += 1;
                 lines.push(DiffLine {
                     kind: DiffLineKind::Removed,
                     content: rest.to_string(),
                     ansi_line,
+                    old_line_no: Some(old_no),
+                    new_line_no: None,
                 });
             } else if let Some(rest) = raw_line.strip_prefix(' ') {
+                let old_no = old_line_counter;
+                let new_no = new_line_counter;
+                old_line_counter += 1;
+                new_line_counter += 1;
                 lines.push(DiffLine {
                     kind: DiffLineKind::Context,
                     content: rest.to_string(),
                     ansi_line,
+                    old_line_no: Some(old_no),
+                    new_line_no: Some(new_no),
                 });
             } else {
                 lines.push(DiffLine {
                     kind: DiffLineKind::FileHeader,
                     content: raw_line.to_string(),
                     ansi_line,
+                    old_line_no: None,
+                    new_line_no: None,
                 });
             }
         }
+
+        let max_old_line_no = lines
+            .iter()
+            .filter_map(|l| l.old_line_no)
+            .max()
+            .unwrap_or(0);
+        let max_new_line_no = lines
+            .iter()
+            .filter_map(|l| l.new_line_no)
+            .max()
+            .unwrap_or(0);
 
         DiffState {
             lines,
@@ -196,6 +242,8 @@ impl DiffState {
             search_mode: None,
             comments: Vec::new(),
             editing_comment: None,
+            max_old_line_no,
+            max_new_line_no,
         }
     }
 
@@ -217,6 +265,16 @@ impl DiffState {
 
     pub fn page_up(&mut self, page_height: usize) {
         self.cursor = self.cursor.saturating_sub(page_height);
+    }
+
+    pub fn go_to_top(&mut self) {
+        self.cursor = 0;
+    }
+
+    pub fn go_to_bottom(&mut self) {
+        if !self.lines.is_empty() {
+            self.cursor = self.lines.len() - 1;
+        }
     }
 
     /// Set search pattern and jump to next match from current cursor.
@@ -581,6 +639,25 @@ fn count_committed_lines(text: &str) -> usize {
     text.lines().count().max(1)
 }
 
+/// Parse old-side and new-side start line numbers from a hunk header.
+/// e.g. `@@ -1,3 +1,4 @@` → `(1, 1)`, `@@ -0,0 +1 @@` → `(0, 1)`
+fn parse_hunk_starts(hunk_header: &str) -> (usize, usize) {
+    // Strip "@@ " prefix to avoid matching '-' in trailing context like "fn some-thing()"
+    let body = hunk_header.strip_prefix("@@ ").unwrap_or(hunk_header);
+
+    let parse_start = |prefix: char| -> usize {
+        body.find(prefix)
+            .and_then(|i| {
+                let after = &body[i + 1..];
+                let end = after.find([',', ' '])?;
+                after[..end].parse().ok()
+            })
+            .unwrap_or(1)
+    };
+
+    (parse_start('-'), parse_start('+'))
+}
+
 /// Check if a diff line's display content matches a search pattern.
 fn line_matches(line: &DiffLine, needle: &str, anchored: bool) -> bool {
     let display = match line.kind {
@@ -641,6 +718,120 @@ diff --git a/src/bar.rs b/src/bar.rs
 +    todo!();
  }
 ";
+
+    // -- parse_hunk_starts --
+
+    #[test]
+    fn parse_hunk_starts_standard() {
+        assert_eq!(parse_hunk_starts("@@ -1,3 +1,4 @@"), (1, 1));
+    }
+
+    #[test]
+    fn parse_hunk_starts_different_offsets() {
+        assert_eq!(parse_hunk_starts("@@ -10,5 +20,8 @@"), (10, 20));
+    }
+
+    #[test]
+    fn parse_hunk_starts_new_file() {
+        // New file: old side is 0,0
+        assert_eq!(parse_hunk_starts("@@ -0,0 +1 @@"), (0, 1));
+    }
+
+    #[test]
+    fn parse_hunk_starts_with_context() {
+        // Hunk header with trailing function context containing '-'
+        assert_eq!(
+            parse_hunk_starts("@@ -5,3 +7,4 @@ fn some-function()"),
+            (5, 7)
+        );
+    }
+
+    // -- line numbers --
+
+    #[test]
+    fn line_numbers_simple_diff() {
+        let state = make_state(SIMPLE_DIFF);
+        // First file: @@ -1,3 +1,4 @@ → counters start at old=1, new=1
+        //  idx 0-2: FileHeaders (no line numbers)
+        //  idx 3:   HunkHeader  (no line numbers)
+        //  idx 4:   Context " use std::io;"   → old=1, new=1
+        //  idx 5:   Added   "+use std::fs;"   →        new=2
+        //  idx 6:   Context " fn main() {"    → old=2, new=3
+        //  idx 7:   Removed "-  println..."   → old=3
+        //  idx 8:   Added   "+  println..."   →        new=4
+        //  idx 9:   Context " }"              → old=4, new=5
+
+        assert_eq!(state.lines[0].old_line_no, None);
+        assert_eq!(state.lines[3].old_line_no, None);
+
+        assert_eq!(state.lines[4].old_line_no, Some(1));
+        assert_eq!(state.lines[4].new_line_no, Some(1));
+
+        assert_eq!(state.lines[5].old_line_no, None);
+        assert_eq!(state.lines[5].new_line_no, Some(2));
+
+        assert_eq!(state.lines[6].old_line_no, Some(2));
+        assert_eq!(state.lines[6].new_line_no, Some(3));
+
+        assert_eq!(state.lines[7].old_line_no, Some(3));
+        assert_eq!(state.lines[7].new_line_no, None);
+
+        assert_eq!(state.lines[8].old_line_no, None);
+        assert_eq!(state.lines[8].new_line_no, Some(4));
+
+        assert_eq!(state.lines[9].old_line_no, Some(4));
+        assert_eq!(state.lines[9].new_line_no, Some(5));
+    }
+
+    #[test]
+    fn line_numbers_second_hunk_resets() {
+        let state = make_state(SIMPLE_DIFF);
+        // Second file: @@ -1,2 +1,3 @@
+        // Find the second hunk header
+        let second_hunk = state
+            .lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.kind == DiffLineKind::HunkHeader)
+            .nth(1)
+            .map(|(i, _)| i)
+            .unwrap();
+
+        // Line after second hunk: Context " fn bar() {" → old=1, new=1
+        let ctx = second_hunk + 1;
+        assert_eq!(state.lines[ctx].old_line_no, Some(1));
+        assert_eq!(state.lines[ctx].new_line_no, Some(1));
+
+        // Next: Added "+    todo!();" → new=2
+        assert_eq!(state.lines[ctx + 1].old_line_no, None);
+        assert_eq!(state.lines[ctx + 1].new_line_no, Some(2));
+
+        // Next: Context " }" → old=2, new=3
+        assert_eq!(state.lines[ctx + 2].old_line_no, Some(2));
+        assert_eq!(state.lines[ctx + 2].new_line_no, Some(3));
+    }
+
+    #[test]
+    fn max_line_no_cached() {
+        let state = make_state(SIMPLE_DIFF);
+        // max old/new should match what we'd get from scanning
+        let scan_max_old = state
+            .lines
+            .iter()
+            .filter_map(|l| l.old_line_no)
+            .max()
+            .unwrap_or(0);
+        let scan_max_new = state
+            .lines
+            .iter()
+            .filter_map(|l| l.new_line_no)
+            .max()
+            .unwrap_or(0);
+        assert_eq!(state.max_old_line_no, scan_max_old);
+        assert_eq!(state.max_new_line_no, scan_max_new);
+        assert!(state.max_old_line_no > 0);
+        assert!(state.max_new_line_no > 0);
+    }
 
     // -- count_editing_lines / count_committed_lines --
 

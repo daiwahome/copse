@@ -5,7 +5,7 @@ use ratatui::text::Line;
 
 use crate::config::DiffFilter;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DiffLineKind {
     Context,
     Added,
@@ -30,6 +30,34 @@ impl std::fmt::Debug for DiffLine {
             .field("ansi_line", &self.ansi_line.as_ref().map(|_| "..."))
             .finish()
     }
+}
+
+/// Anchor identifying a diff line by its content rather than index.
+#[derive(Debug, Clone)]
+pub struct LineAnchor {
+    pub file_path: String,
+    pub kind: DiffLineKind,
+    pub content: String,
+}
+
+/// A saved comment with content-based anchor (survives line index shifts).
+#[derive(Debug, Clone)]
+pub struct SavedComment {
+    pub anchor: LineAnchor,
+    pub original_index: usize,
+    pub text: String,
+}
+
+/// Snapshot of DiffState that can survive a refresh or close/reopen.
+#[derive(Debug, Clone)]
+pub struct SavedDiffState {
+    pub task_name: String,
+    pub cursor_anchor: Option<LineAnchor>,
+    pub cursor_index: usize,
+    pub scroll_anchor: Option<LineAnchor>,
+    pub scroll_index: usize,
+    pub comments: Vec<SavedComment>,
+    pub search_mode: Option<SearchMode>,
 }
 
 /// A review comment attached to a specific diff line.
@@ -382,6 +410,121 @@ impl DiffState {
     /// Cancel editing without saving.
     pub fn cancel_editing(&mut self) {
         self.editing_comment = None;
+    }
+
+    /// Build a vec mapping each line index to its owning file path. O(n) scan.
+    fn build_file_path_map(&self) -> Vec<String> {
+        let mut current_path = "<unknown>".to_string();
+        self.lines
+            .iter()
+            .map(|line| {
+                if line.kind == DiffLineKind::FileHeader {
+                    if let Some(rest) = line.content.strip_prefix("diff --git ") {
+                        if let Some(b_path) = rest.rsplit_once(" b/") {
+                            current_path = b_path.1.to_string();
+                        }
+                    }
+                }
+                current_path.clone()
+            })
+            .collect()
+    }
+
+    /// Save current cursor, scroll, comments, and search state as anchors.
+    pub fn save_state(&self) -> SavedDiffState {
+        let path_map = self.build_file_path_map();
+
+        let make_anchor = |idx: usize| -> Option<LineAnchor> {
+            self.lines.get(idx).map(|line| LineAnchor {
+                file_path: path_map[idx].clone(),
+                kind: line.kind.clone(),
+                content: line.content.clone(),
+            })
+        };
+
+        let comments = self
+            .comments
+            .iter()
+            .filter_map(|c| {
+                self.lines.get(c.line_index).map(|line| SavedComment {
+                    anchor: LineAnchor {
+                        file_path: path_map[c.line_index].clone(),
+                        kind: line.kind.clone(),
+                        content: line.content.clone(),
+                    },
+                    original_index: c.line_index,
+                    text: c.text.clone(),
+                })
+            })
+            .collect();
+
+        SavedDiffState {
+            task_name: self.task_name.clone(),
+            cursor_anchor: make_anchor(self.cursor),
+            cursor_index: self.cursor,
+            scroll_anchor: make_anchor(self.scroll_offset),
+            scroll_index: self.scroll_offset,
+            comments,
+            search_mode: self.search_mode.clone(),
+        }
+    }
+
+    /// Restore saved state into this (freshly parsed) DiffState.
+    pub fn restore_state(&mut self, saved: &SavedDiffState) {
+        if saved.task_name != self.task_name {
+            return;
+        }
+
+        let path_map = self.build_file_path_map();
+
+        // Find a line matching the anchor, preferring the one closest to `hint`.
+        let find_line = |anchor: &LineAnchor, hint: usize| -> Option<usize> {
+            self.lines
+                .iter()
+                .enumerate()
+                .filter(|(idx, line)| {
+                    line.kind == anchor.kind
+                        && line.content == anchor.content
+                        && path_map[*idx] == anchor.file_path
+                })
+                .min_by_key(|(idx, _)| (*idx as isize - hint as isize).unsigned_abs())
+                .map(|(idx, _)| idx)
+        };
+
+        // Restore cursor
+        if let Some(ref anchor) = saved.cursor_anchor {
+            self.cursor = find_line(anchor, saved.cursor_index)
+                .unwrap_or_else(|| saved.cursor_index.min(self.lines.len().saturating_sub(1)));
+        } else {
+            self.cursor = saved.cursor_index.min(self.lines.len().saturating_sub(1));
+        }
+
+        // Restore scroll offset
+        if let Some(ref anchor) = saved.scroll_anchor {
+            self.scroll_offset = find_line(anchor, saved.scroll_index)
+                .unwrap_or_else(|| saved.scroll_index.min(self.lines.len().saturating_sub(1)));
+        } else {
+            self.scroll_offset = saved.scroll_index.min(self.lines.len().saturating_sub(1));
+        }
+
+        // Restore comments
+        for sc in &saved.comments {
+            if let Some(new_idx) = find_line(&sc.anchor, sc.original_index) {
+                let file_path = path_map[new_idx].clone();
+                // Avoid duplicating if already present
+                if !self.has_comment(new_idx) {
+                    self.comments.push(ReviewComment {
+                        line_index: new_idx,
+                        file_path,
+                        text: sc.text.clone(),
+                    });
+                }
+            }
+            // If no match, the comment is dropped (line no longer exists)
+        }
+
+        // Restore search mode
+        self.search_mode = saved.search_mode.clone();
     }
 
     /// Format all comments as a structured review prompt for Claude.
@@ -903,5 +1046,171 @@ diff --git a/src/bar.rs b/src/bar.rs
         state.cursor = idx;
         state.start_editing();
         assert_eq!(state.editing_comment.as_ref().unwrap().text, "");
+    }
+
+    // -- save_state / restore_state --
+
+    #[test]
+    fn save_restore_cursor() {
+        let mut state = make_state(SIMPLE_DIFF);
+        // Move cursor to the "use std::fs;" added line
+        let idx = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::Added && l.content == "use std::fs;")
+            .unwrap();
+        state.cursor = idx;
+        state.scroll_offset = 2;
+
+        let saved = state.save_state();
+
+        // Create a fresh state from the same diff (cursor resets to 0)
+        let mut new_state = make_state(SIMPLE_DIFF);
+        assert_eq!(new_state.cursor, 0);
+        new_state.restore_state(&saved);
+
+        assert_eq!(new_state.cursor, idx);
+        assert_eq!(new_state.scroll_offset, 2);
+    }
+
+    #[test]
+    fn save_restore_comments() {
+        let mut state = make_state(SIMPLE_DIFF);
+        let idx = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::Added && l.content == "use std::fs;")
+            .unwrap();
+        state.comments.push(ReviewComment {
+            line_index: idx,
+            file_path: "src/foo.rs".to_string(),
+            text: "Why this import?".to_string(),
+        });
+
+        let saved = state.save_state();
+        let mut new_state = make_state(SIMPLE_DIFF);
+        new_state.restore_state(&saved);
+
+        assert_eq!(new_state.comments.len(), 1);
+        assert_eq!(new_state.comments[0].line_index, idx);
+        assert_eq!(new_state.comments[0].text, "Why this import?");
+    }
+
+    #[test]
+    fn restore_drops_orphaned_comments() {
+        let mut state = make_state(SIMPLE_DIFF);
+        let idx = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::Added && l.content == "use std::fs;")
+            .unwrap();
+        state.comments.push(ReviewComment {
+            line_index: idx,
+            file_path: "src/foo.rs".to_string(),
+            text: "orphan".to_string(),
+        });
+
+        let saved = state.save_state();
+
+        // Parse a different diff where "use std::fs;" doesn't exist
+        let modified_diff = "\
+diff --git a/src/foo.rs b/src/foo.rs
+--- a/src/foo.rs
++++ b/src/foo.rs
+@@ -1,3 +1,3 @@
+ use std::io;
+ fn main() {
+-    println!(\"hello\");
++    println!(\"world\");
+ }
+";
+        let mut new_state = make_state(modified_diff);
+        new_state.restore_state(&saved);
+
+        // Comment should be dropped (no matching line)
+        assert_eq!(new_state.comments.len(), 0);
+    }
+
+    #[test]
+    fn restore_duplicate_lines() {
+        // Diff with duplicate blank context lines (space-prefixed as in real git diff).
+        // In unified diff, blank context lines are represented as " " (single space).
+        let dup_diff = "diff --git a/src/x.rs b/src/x.rs\n--- a/src/x.rs\n+++ b/src/x.rs\n@@ -1,5 +1,5 @@\n \n fn a() {}\n \n fn b() {}\n \n";
+        let mut state = make_state(dup_diff);
+        // Lines: [FileHeader(diff --git), FileHeader(---), FileHeader(+++),
+        //         HunkHeader(@@), Context(blank), Context(fn a), Context(blank),
+        //         Context(fn b), Context(blank)]
+        assert_eq!(state.lines[4].kind, DiffLineKind::Context);
+        assert_eq!(state.lines[4].content, "");
+        assert_eq!(state.lines[6].kind, DiffLineKind::Context);
+        assert_eq!(state.lines[6].content, "");
+        assert_eq!(state.lines[8].kind, DiffLineKind::Context);
+        assert_eq!(state.lines[8].content, "");
+        // Cursor on the second blank context line (index 6, between fn a and fn b)
+        state.cursor = 6;
+
+        let saved = state.save_state();
+        let mut new_state = make_state(dup_diff);
+        new_state.restore_state(&saved);
+
+        // Should pick the blank context line closest to the original index 6
+        assert_eq!(new_state.cursor, 6);
+    }
+
+    #[test]
+    fn restore_empty_diff() {
+        let mut state = make_state(SIMPLE_DIFF);
+        state.cursor = 5;
+        state.comments.push(ReviewComment {
+            line_index: 5,
+            file_path: "src/foo.rs".to_string(),
+            text: "comment".to_string(),
+        });
+
+        let saved = state.save_state();
+
+        let mut empty_state = DiffState::parse("", "test-task".to_string(), None);
+        empty_state.restore_state(&saved);
+
+        assert_eq!(empty_state.cursor, 0);
+        assert_eq!(empty_state.comments.len(), 0);
+    }
+
+    #[test]
+    fn save_restore_search_mode() {
+        let mut state = make_state(SIMPLE_DIFF);
+        state.search_mode = Some(SearchMode::Pattern("hello".to_string()));
+
+        let saved = state.save_state();
+        let mut new_state = make_state(SIMPLE_DIFF);
+        assert!(new_state.search_mode.is_none());
+        new_state.restore_state(&saved);
+
+        assert_eq!(
+            new_state.search_mode,
+            Some(SearchMode::Pattern("hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn build_file_path_map_correct() {
+        let state = make_state(SIMPLE_DIFF);
+        let map = state.build_file_path_map();
+
+        assert_eq!(map.len(), state.lines.len());
+
+        // All lines in the first file section should be "src/foo.rs"
+        let first_bar_idx = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::FileHeader && l.content.contains("b/src/bar.rs"))
+            .unwrap();
+        for i in 0..first_bar_idx {
+            assert_eq!(map[i], "src/foo.rs", "line {i} should be src/foo.rs");
+        }
+        // Lines from bar.rs header onward
+        for i in first_bar_idx..map.len() {
+            assert_eq!(map[i], "src/bar.rs", "line {i} should be src/bar.rs");
+        }
     }
 }

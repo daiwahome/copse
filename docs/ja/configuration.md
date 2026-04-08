@@ -28,6 +28,11 @@ log_level = "info"
 permission_mode = "default"
 auto_mode = false
 
+[codex]
+# sandbox = "workspace-write"
+# approval = "on-request"
+search = true
+
 [color]
 cursor = { bg = "236" }
 cursor-blur = { fg = "252", bg = "234" }
@@ -106,7 +111,7 @@ exit-scroll-mode = ["q", "Enter"]
 
 | オプション             | 型              | デフォルト     | 説明                                                                     |
 | ---------------------- | --------------- | -------------- | ------------------------------------------------------------------------ |
-| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"`                                     |
+| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"` または `"codex"`                    |
 | `backend`              | string          | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"`                        |
 | `diff_filter`          | string          | `"none"`       | Diff の着色方法: `"none"` または `"delta"`                               |
 | `shell_mode`           | string          | `"suspend"`    | シェルの開き方: `"suspend"` または `"tmux"`                              |
@@ -123,6 +128,16 @@ Claude Code 固有のオプション。
 | ----------------- | ------ | ----------- | ----------------------------------------------------------------------- |
 | `permission_mode` | string | `"default"` | 全タスクの Claude Code パーミッションモード                             |
 | `auto_mode`       | bool   | `false`     | Claude Code に `--enable-auto-mode` を渡す (research preview、下記参照) |
+
+### `[codex]` セクション
+
+Codex CLI 固有のオプション。全てオプショナル — 省略時はフラグを渡さず、Codex 自身の設定 (`~/.codex/config.toml`) に従う。
+
+| オプション | 型              | デフォルト | 説明                                                                               |
+| ---------- | --------------- | ---------- | ---------------------------------------------------------------------------------- |
+| `sandbox`  | string (省略可) | —          | サンドボックスポリシー: `"read-only"`, `"workspace-write"`, `"danger-full-access"` |
+| `approval` | string (省略可) | —          | 承認モード: `"untrusted"`, `"on-request"`, `"never"`                               |
+| `search`   | bool            | `true`     | Web 検索を有効化 (`--search`)                                                      |
 
 ### Auto Mode
 
@@ -157,16 +172,16 @@ session 中に Claude Code 内でモードを変更することもできる（�
 
 ### Backend
 
-Claude Code プロセスの管理方法を制御する。
+エージェントプロセスの管理方法を制御する。
 
-| 値        | 説明                                                                                   |
-| --------- | -------------------------------------------------------------------------------------- |
-| `builtin` | デフォルト — PTY で直接 claude を実行。copse 終了時にプロセスを終了する                |
-| `tmux`    | tmux セッション内で claude を実行。copse 終了後もプロセスが継続する (tmux 3.0+ が必要) |
+| 値        | 説明                                                                                       |
+| --------- | ------------------------------------------------------------------------------------------ |
+| `builtin` | デフォルト — PTY で直接エージェントを実行。copse 終了時にプロセスを終了する                |
+| `tmux`    | tmux セッション内でエージェントを実行。copse 終了後もプロセスが継続する (tmux 3.0+ が必要) |
 
 `tmux` バックエンド使用時:
 
-- copse 終了時、Claude プロセスはバックグラウンドで継続実行される
+- copse 終了時、エージェントプロセスはバックグラウンドで継続実行される
 - copse 再起動時、既存の tmux セッションを自動検出し Running として表示する
 - Running (デタッチ状態) のタスクを開くと tmux セッションに再接続する
 - tmux のインストールが必要。未インストールの場合、copse はエラーで終了する
@@ -279,7 +294,7 @@ fullscreen = ["O", "Ctrl-O", "F11"]  # F11 を追加
 
 ## Auto-Commit
 
-`auto_commit` が有効な場合、copse は各 worktree に Claude Code の [Stop hook](https://docs.anthropic.com/en/docs/claude-code/hooks) をインストールする。Claude の応答完了後にフックが実行され:
+`auto_commit` が有効な場合、copse は各 worktree に Stop hook をインストールする。エージェントの応答完了後にフックが実行され:
 
 1. 全ての変更をステージング (`git add -A`)
 2. ステージされた変更がなければスキップ (`git diff --cached --quiet`)
@@ -289,7 +304,7 @@ Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュさ
 
 ## Auto-Permissions
 
-`auto_permissions` が有効な場合、copse は以下の安全なコマンドを事前承認し、Claude Code が確認プロンプトを出さないようにする:
+`auto_permissions` が有効な場合 (Claude Code のみ)、copse は以下の安全なコマンドを事前承認し、エージェントが確認プロンプトを出さないようにする。Codex CLI では無効。
 
 | カテゴリ       | コマンド                                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -337,7 +352,7 @@ COPSE_LOG=debug copse
 
 ## Notification Command
 
-設定すると、copse は各 worktree に Claude Code の [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks) をインストールする。Claude Code がユーザの入力待ちになった時にコマンドが実行される。
+設定すると、copse はエージェントが入力待ちになった時にコマンドを実行するよう構成する。Claude Code では [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks) を、Codex CLI では `notify` 設定を使用する。
 
 キーを省略すると通知は無効になる。`notification_command = ""` はバリデーションエラーになる。
 
@@ -371,6 +386,8 @@ notification_command = "printf '\\a' && osascript -e 'display notification \"Nee
 
 ## 設定のマージ戦略
 
+### Claude Code
+
 copse はタスク起動時に各 worktree に `.claude/settings.local.json` を書き込む。最終的な設定は以下のレイヤーを順にマージして構築される:
 
 1. **リポジトリ設定** — リポジトリルートの `.claude/settings.local.json` (存在する場合)
@@ -378,3 +395,11 @@ copse はタスク起動時に各 worktree に `.claude/settings.local.json` を
 3. **機密パス deny ルール** — `auto_permissions` が有効な場合に自動生成
 
 配列は結合・重複排除されるため、リポジトリ設定に追加した permissions は copse テンプレートと共に保持される。
+
+### Codex CLI
+
+copse はタスク起動時に各 worktree に `.codex/hooks.json` と `.codex/config.toml` を書き込む:
+
+1. **リポジトリ hooks** — リポジトリルートの `.codex/hooks.json` (存在する場合)
+2. **Stop hook** — `auto_commit` が有効な場合に追加（`codex_hooks` feature flag が必要）
+3. **Notify 設定** — `notification_command` が設定されている場合に追加

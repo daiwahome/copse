@@ -28,6 +28,11 @@ log_level = "info"
 permission_mode = "default"
 auto_mode = false
 
+[codex]
+# sandbox = "workspace-write"
+# approval = "on-request"
+search = true
+
 [color]
 cursor = { bg = "236" }
 cursor-blur = { fg = "252", bg = "234" }
@@ -106,7 +111,7 @@ exit-scroll-mode = ["q", "Enter"]
 
 | Option                 | Type            | Default        | Description                                                             |
 | ---------------------- | --------------- | -------------- | ----------------------------------------------------------------------- |
-| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"`                                            |
+| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"` or `"codex"`                               |
 | `backend`              | string          | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`                                |
 | `diff_filter`          | string          | `"none"`       | Diff colorizer: `"none"` or `"delta"`                                   |
 | `shell_mode`           | string          | `"suspend"`    | Shell open method: `"suspend"` or `"tmux"`                              |
@@ -123,6 +128,16 @@ Agent-specific options for Claude Code.
 | ----------------- | ------ | ----------- | ---------------------------------------------------------------------- |
 | `permission_mode` | string | `"default"` | Claude Code permission mode for all tasks                              |
 | `auto_mode`       | bool   | `false`     | Pass `--enable-auto-mode` to Claude Code (research preview, see below) |
+
+### `[codex]` Section
+
+Agent-specific options for Codex CLI. All options are optional — when omitted, no flags are passed to `codex` and it uses its own configuration (`~/.codex/config.toml`).
+
+| Option     | Type            | Default | Description                                                                   |
+| ---------- | --------------- | ------- | ----------------------------------------------------------------------------- |
+| `sandbox`  | string (option) | —       | Sandbox policy: `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
+| `approval` | string (option) | —       | Approval mode: `"untrusted"`, `"on-request"`, or `"never"`                    |
+| `search`   | bool            | `true`  | Enable web search (`--search`)                                                |
 
 ### Auto Mode
 
@@ -157,16 +172,16 @@ The mode can be changed during a session within Claude Code (e.g. via `/permissi
 
 ### Backend
 
-Controls how Claude Code processes are managed.
+Controls how agent processes are managed.
 
-| Value     | Description                                                                                          |
-| --------- | ---------------------------------------------------------------------------------------------------- |
-| `builtin` | Default — runs claude directly in a PTY; processes are killed when copse exits                       |
-| `tmux`    | Runs claude inside a tmux session; processes continue running after copse exits (requires tmux 3.0+) |
+| Value     | Description                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| `builtin` | Default — runs the agent directly in a PTY; processes are killed when copse exits                       |
+| `tmux`    | Runs the agent inside a tmux session; processes continue running after copse exits (requires tmux 3.0+) |
 
 When using the `tmux` backend:
 
-- Claude processes keep running in the background when copse exits
+- Agent processes keep running in the background when copse exits
 - On restart, copse detects existing tmux sessions and shows them as Running
 - Opening a Running (detached) task reattaches to the tmux session
 - Requires tmux to be installed; copse exits with an error if tmux is not found
@@ -279,7 +294,7 @@ Invalid key strings or unknown action names show a warning in the status bar on 
 
 ## Auto-Commit
 
-When `auto_commit` is enabled, copse installs a Claude Code [Stop hook](https://docs.anthropic.com/en/docs/claude-code/hooks) in each worktree. After every Claude response, the hook:
+When `auto_commit` is enabled, copse installs a Stop hook in each worktree. After every agent response, the hook:
 
 1. Stages all changes (`git add -A`)
 2. Skips if there are no staged changes (`git diff --cached --quiet`)
@@ -289,7 +304,7 @@ The commits ahead count in the Tasks view refreshes every 5 seconds, so you can 
 
 ## Auto-Permissions
 
-When `auto_permissions` is enabled, copse pre-approves the following safe commands so Claude Code does not prompt for confirmation:
+When `auto_permissions` is enabled (Claude Code only), copse pre-approves the following safe commands so the agent does not prompt for confirmation. This option has no effect when using Codex CLI.
 
 | Category        | Commands                                                                                                                                                |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -337,7 +352,7 @@ COPSE_LOG=debug copse
 
 ## Notification Command
 
-When set, copse installs a Claude Code [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks) in each worktree. The hook runs the specified command whenever Claude Code is waiting for user input.
+When set, copse configures the agent to run the specified command when it is waiting for user input. For Claude Code, this installs a [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks). For Codex CLI, this uses the `notify` configuration.
 
 Omit the key entirely to disable notifications. Setting `notification_command = ""` is a validation error.
 
@@ -371,6 +386,8 @@ Check your terminal's notification/bell settings for the desired behavior.
 
 ## Settings Merge Strategy
 
+### Claude Code
+
 copse writes a `.claude/settings.local.json` file into each worktree when a task is launched. The final settings are built by merging layers in order:
 
 1. **Repository settings** — `.claude/settings.local.json` at the repository root (if it exists)
@@ -378,3 +395,11 @@ copse writes a `.claude/settings.local.json` file into each worktree when a task
 3. **Sensitive-path deny rules** — automatically generated when `auto_permissions` is enabled
 
 Arrays are concatenated and deduplicated, so additional permissions added in the repository settings are preserved alongside the copse template.
+
+### Codex CLI
+
+copse writes `.codex/hooks.json` and/or `.codex/config.toml` into each worktree when a task is launched:
+
+1. **Repository hooks** — `.codex/hooks.json` at the repository root (if it exists)
+2. **Stop hook** — added when `auto_commit` is enabled (requires `codex_hooks` feature flag)
+3. **Notify setting** — added when `notification_command` is set

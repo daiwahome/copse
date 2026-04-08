@@ -541,11 +541,13 @@ impl App {
                 let upstream = branches[selected].clone();
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));
                 let content_rows = rows.saturating_sub(1);
+                let agent = self.config.agent.clone();
                 let backend = self.config.backend.clone();
                 let task = Task::new_stopped(
                     name,
                     upstream,
                     &self.worktree_base_dir,
+                    agent,
                     backend,
                     content_rows,
                     cols,
@@ -609,6 +611,7 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let repo_root = self.repo_root.clone();
                 let worktree_base_dir = self.worktree_base_dir.clone();
+                let agent = self.config.agent.clone();
                 let backend = self.config.backend.clone();
                 if let Some(task) = self.tasks.get_mut(self.selected_index) {
                     let id = task.id;
@@ -617,7 +620,13 @@ impl App {
                     let event_tx = self.event_tx.clone();
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
-                            Task::delete_task(&repo_root, &worktree_base_dir, &name, &backend)
+                            Task::delete_task(
+                                &repo_root,
+                                &worktree_base_dir,
+                                &name,
+                                &agent,
+                                &backend,
+                            )
                         })
                         .await;
                         match result {

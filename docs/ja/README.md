@@ -1,12 +1,12 @@
 # copse
 
-Claude Code のタスクを git worktree で並列実行する TUI ツール。
+AI コーディングエージェントのタスクを git worktree で並列実行する TUI ツール。
 
-[tig](https://github.com/jonas/tig) にインスパイアされた設計。`claude` CLI をそのままラップし、copse はフロントエンドのみを提供する。
+[tig](https://github.com/jonas/tig) にインスパイアされた設計。エージェント CLI (Claude Code, Codex) をそのままラップし、copse はフロントエンドのみを提供する。
 
 ## コンセプト
 
-- **Task** — 作業単位。git ブランチ (`copse/<name>`) と [git worktree](https://git-scm.com/docs/git-worktree) に対応する。各タスクは独立した `claude` プロセスを実行する。
+- **Task** — 作業単位。git ブランチ (`copse/<name>`) と [git worktree](https://git-scm.com/docs/git-worktree) に対応する。各タスクは独立したエージェントプロセスを実行する。
 - **Upstream** — タスクの分岐元ブランチ。git の [tracking branch](https://git-scm.com/book/en/v2/Git-Branching-Remote-Branches) として保存される。タスクを upstream にマージしたり、同期したりできる。
 
 ```
@@ -18,7 +18,7 @@ upstream branch (例: feature-x)
 
 ## 機能
 
-- **並列実行** — 複数の Claude Code タスクをそれぞれ独立した git worktree で同時実行
+- **並列実行** — 複数のエージェントタスクをそれぞれ独立した git worktree で同時実行
 - **タスクライフサイクル** — タスクの作成・開始・停止・マージ・同期・削除をひとつの画面で操作
 - **コードレビュー** — unified diff のハンク移動・検索、インラインレビューコメントをエージェントに送信
 - **分割レイアウト** — Tasks + Diff、Tasks + Agent、Diff + Agent の並列表示とフルスクリーン切替
@@ -30,13 +30,13 @@ upstream branch (例: feature-x)
 
 ## 必要なもの
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) または [Codex CLI](https://github.com/openai/codex) (設定の `agent` で切り替え)
 - git リポジトリ内で実行する必要がある
 
 ### オプション
 
 - [delta](https://github.com/dandavison/delta) — インストールされている場合、diff view で delta によるシンタックスハイライトと単語レベルの差分強調が有効になる。delta がない場合は tig 風のシンプルな配色で表示される。
-- [tmux](https://github.com/tmux/tmux) (3.0+) — バックエンドとして設定すると（設定ファイルで `backend = "tmux"`）、Claude Code プロセスが tmux セッション内で実行され、copse 終了後もバックグラウンドで動作し続ける。tmux がない場合はビルトインバックエンドが使用され、copse 終了時にプロセスは終了する。詳細は[設定](configuration.md#backend)を参照。
+- [tmux](https://github.com/tmux/tmux) (3.0+) — バックエンドとして設定すると（設定ファイルで `backend = "tmux"`）、エージェントプロセスが tmux セッション内で実行され、copse 終了後もバックグラウンドで動作し続ける。tmux がない場合はビルトインバックエンドが使用され、copse 終了時にプロセスは終了する。詳細は[設定](configuration.md#backend)を参照。
 
 ### 推奨ターミナル
 
@@ -94,7 +94,7 @@ copse/src
  ├── main.rs         エントリーポイント、SIGTSTP 処理、パニックフック
  ├── tui.rs          Ratatui + Crossterm イベントループ、suspend/resume
  ├── app.rs          アプリケーション状態 (タスク、ビュー、キー処理)
- ├── task.rs         git worktree 管理、PTY で `claude` を起動
+ ├── task.rs         git worktree 管理、PTY でエージェントを起動
  │                   PTY 出力 → vt100 パーサー → スクリーンバッファ
  ├── agent.rs        エージェント設定、CLAUDE.md 管理
  ├── backend.rs      プロセスバックエンド (ビルトイン PTY / tmux セッション)

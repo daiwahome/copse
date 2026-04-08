@@ -1,12 +1,12 @@
 # copse
 
-A TUI for running Claude Code tasks in parallel using git worktrees.
+A TUI for running AI coding agent tasks in parallel using git worktrees.
 
-Inspired by [tig](https://github.com/jonas/tig). Wraps the `claude` CLI as-is — copse only provides the frontend.
+Inspired by [tig](https://github.com/jonas/tig). Wraps agent CLIs (Claude Code, Codex) as-is — copse only provides the frontend.
 
 ## Concepts
 
-- **Task** — A unit of work, backed by a git branch (`copse/<name>`) and a [git worktree](https://git-scm.com/docs/git-worktree). Each task runs an independent `claude` process.
+- **Task** — A unit of work, backed by a git branch (`copse/<name>`) and a [git worktree](https://git-scm.com/docs/git-worktree). Each task runs an independent agent process.
 - **Upstream** — The branch a task was forked from, stored as a git [tracking branch](https://git-scm.com/book/en/v2/Git-Branching-Remote-Branches). Tasks can be merged back into or synced from their upstream.
 
 ```
@@ -18,7 +18,7 @@ upstream branch (e.g. feature-x)
 
 ## Features
 
-- **Parallel execution** — Run multiple Claude Code tasks simultaneously, each isolated in its own git worktree
+- **Parallel execution** — Run multiple agent tasks simultaneously, each isolated in its own git worktree
 - **Task lifecycle** — Create, start, stop, merge, sync, and delete tasks from one place
 - **Code review** — Unified diffs with hunk navigation, search, and inline review comments sent to the agent
 - **Split layouts** — Tasks + Diff, Tasks + Agent, or Diff + Agent side by side; toggle fullscreen
@@ -30,13 +30,13 @@ upstream branch (e.g. feature-x)
 
 ## Requirements
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex CLI](https://github.com/openai/codex) (configure with `agent` in config)
 - A git repository (copse must be run from within one)
 
 ### Optional
 
 - [delta](https://github.com/dandavison/delta) — When installed, the diff view uses delta for syntax highlighting and word-level emphasis. Without delta, diffs are shown with plain tig-style coloring.
-- [tmux](https://github.com/tmux/tmux) (3.0+) — When configured as the backend (`backend = "tmux"` in config), Claude Code processes run inside tmux sessions and continue running after copse exits. Without tmux, the built-in backend is used and processes are killed on exit. See [Configuration](docs/en/configuration.md#backend) for details.
+- [tmux](https://github.com/tmux/tmux) (3.0+) — When configured as the backend (`backend = "tmux"` in config), agent processes run inside tmux sessions and continue running after copse exits. Without tmux, the built-in backend is used and processes are killed on exit. See [Configuration](docs/en/configuration.md#backend) for details.
 
 ### Recommended Terminals
 

@@ -91,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
             name.clone(),
             &repo_root,
             &worktree_base_dir,
+            app.config.agent.clone(),
             backend.clone(),
             rows,
             cols,

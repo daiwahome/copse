@@ -21,6 +21,7 @@ backend = "builtin"
 diff_filter = "none"
 auto_commit = false
 auto_permissions = false
+show_line_numbers = false
 log_level = "info"
 # notification_command = "osascript -e 'display notification \"Needs input\" with title \"Copse\"'"
 
@@ -94,6 +95,8 @@ edit-comment = ["e"]
 delete-comment = ["!"]
 send-review = ["S"]
 next-comment = ["c"]
+go-to-top = ["g"]
+go-to-bottom = ["G"]
 
 [keys.agent]
 fullscreen = ["Ctrl-O"]
@@ -117,6 +120,7 @@ exit-scroll-mode = ["q", "Enter"]
 | `shell_mode`           | string          | `"suspend"`    | シェルの開き方: `"suspend"` または `"tmux"`                              |
 | `auto_commit`          | bool            | `false`        | エージェントの応答ごとに変更を自動コミット                               |
 | `auto_permissions`     | bool            | `false`        | 安全なコマンドをエージェントで自動承認                                   |
+| `show_line_numbers`    | bool            | `false`        | Diff ガターに old/new のファイル行番号を表示                             |
 | `log_level`            | string          | `"info"`       | ログレベル: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"off"` |
 | `notification_command` | string (省略可) | —              | エージェントが入力待ちになった時に実行するコマンド                       |
 

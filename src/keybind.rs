@@ -47,6 +47,8 @@ pub enum DiffAction {
     DeleteComment,
     SendReview,
     NextComment,
+    GoToTop,
+    GoToBottom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -332,6 +334,8 @@ fn diff_action_defs() -> &'static [ActionDef<DiffAction>] {
         "delete-comment", "Delete comment" => DiffAction::DeleteComment, ["!"];
         "send-review", "Send review" => DiffAction::SendReview, ["S"];
         "next-comment", "Jump to next comment" => DiffAction::NextComment, ["c"];
+        "go-to-top", "Jump to top" => DiffAction::GoToTop, ["g"];
+        "go-to-bottom", "Jump to bottom" => DiffAction::GoToBottom, ["G"];
     }
 }
 

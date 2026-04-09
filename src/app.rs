@@ -1322,6 +1322,18 @@ impl App {
                     }
                 }
             }
+            DiffAction::GoToTop => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.go_to_top();
+                    state.ensure_cursor_visible(page_height);
+                }
+            }
+            DiffAction::GoToBottom => {
+                if let Some(state) = self.diff_state_mut() {
+                    state.go_to_bottom();
+                    state.ensure_cursor_visible(page_height);
+                }
+            }
         }
         Ok(())
     }

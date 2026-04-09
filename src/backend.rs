@@ -224,6 +224,20 @@ impl Backend {
         }
     }
 
+    /// Cancel tmux copy-mode for the session, if active.
+    /// This is a best-effort operation — errors are silently ignored.
+    /// No-op for the BuiltIn backend.
+    pub fn cancel_copy_mode(&self, session_id: Option<&str>) {
+        if let (Backend::Tmux, Some(session)) = (self, session_id) {
+            let target = format!("={session}");
+            let _ = tmux_command()
+                .args(["send-keys", "-t", &target, "-X", "cancel"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .output();
+        }
+    }
+
     /// Whether the backend handles scrollback natively (e.g. tmux copy-mode).
     /// When true, copse skips its own scrollback and lets keys pass through to the PTY.
     pub fn handles_scrollback(&self) -> bool {
@@ -342,6 +356,13 @@ mod tests {
         });
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn builtin_cancel_copy_mode_is_noop() {
+        // Should not panic or error for BuiltIn backend
+        Backend::BuiltIn.cancel_copy_mode(None);
+        Backend::BuiltIn.cancel_copy_mode(Some("anything"));
     }
 
     #[test]

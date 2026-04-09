@@ -1153,7 +1153,7 @@ impl App {
                 }
                 AgentAction::ExitScrollMode => {
                     if let Some(task) = self.focused_task_mut() {
-                        task.scroll_offset = 0;
+                        task.exit_scroll_mode();
                     }
                 }
             }
@@ -1523,6 +1523,9 @@ impl App {
             self.last_error = Some("Task is not running — start the agent first".to_string());
             return;
         }
+
+        // Exit scroll/copy mode so the paste reaches the agent and is visible.
+        task.exit_scroll_mode();
 
         // Send via bracketed paste (no Enter — user submits manually)
         let mut payload = Vec::new();

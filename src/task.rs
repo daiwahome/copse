@@ -649,6 +649,14 @@ impl Task {
         Ok(())
     }
 
+    /// Exit scroll/copy mode so the next PTY write is visible and received.
+    /// - Tmux: cancels copy-mode via tmux command
+    /// - BuiltIn: resets scroll offset to show live output
+    pub fn exit_scroll_mode(&mut self) {
+        self.backend.cancel_copy_mode(self.session_id.as_deref());
+        self.scroll_offset = 0;
+    }
+
     /// Send keyboard input to the PTY
     pub fn write_input(&mut self, data: &[u8]) -> anyhow::Result<()> {
         if let Some(writer) = &mut self.writer {

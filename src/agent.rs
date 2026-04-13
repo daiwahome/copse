@@ -5,6 +5,20 @@ use std::sync::OnceLock;
 use crate::config::{Agent, Config};
 use crate::process::CommandLogExt;
 
+/// Short context note injected into the agent's system prompt / instructions
+/// when `auto_commit` is enabled, so the agent knows its work is being
+/// auto-committed after every response and can plan its own commits
+/// accordingly. Kept terse on purpose: 2-4 sentences, ASCII-only so it
+/// survives CLI argument passing under any locale.
+const AUTO_COMMIT_HINT: &str = "\
+copse auto-commit is active for this session. A Stop hook runs \
+`git add -A && git diff --cached --quiet || git commit -m \"copse auto-commit\"` \
+after every agent response. You do not need to run `git commit` yourself; \
+any uncommitted changes at the end of your turn are packaged into a \
+'copse auto-commit' commit automatically. You may still make your own \
+commits with meaningful messages - auto-commit only fires if leftover \
+changes remain after yours.";
+
 impl Agent {
     /// Check that the agent's external dependency is available.
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -71,6 +85,10 @@ impl Agent {
                 args.push(config.claude_code.permission_mode.clone());
                 if config.claude_code.auto_mode {
                     args.push("--enable-auto-mode".to_string());
+                }
+                if config.auto_commit {
+                    args.push("--append-system-prompt".to_string());
+                    args.push(AUTO_COMMIT_HINT.to_string());
                 }
                 args
             }
@@ -398,6 +416,22 @@ fn setup_codex_worktree(
             table.insert("notify".to_string(), notify_array);
         }
 
+        // Write the auto-commit hint as a session-scoped instructions file and
+        // point Codex at it via `model_instructions_file`. Codex resolves a
+        // relative `model_instructions_file` against the directory of
+        // `config.toml` (i.e. `.codex/`), so we store the sibling file name
+        // without a `.codex/` prefix — otherwise Codex would look for
+        // `.codex/.codex/copse-instructions.md`. If the user already set
+        // `model_instructions_file` in their own config we respect it and skip
+        // (so we do not silently clobber project-specific instructions).
+        if auto_commit && !table.contains_key("model_instructions_file") {
+            std::fs::write(codex_dir.join("copse-instructions.md"), AUTO_COMMIT_HINT)?;
+            table.insert(
+                "model_instructions_file".to_string(),
+                toml::Value::String("copse-instructions.md".to_string()),
+            );
+        }
+
         let config_path = codex_dir.join("config.toml");
         std::fs::write(&config_path, toml::to_string_pretty(&table)?)?;
     }
@@ -407,7 +441,11 @@ fn setup_codex_worktree(
     // keeps the worktree free of any `.gitignore` diff.
     ensure_git_excluded(
         worktree_path,
-        &["/.codex/hooks.json", "/.codex/config.toml"],
+        &[
+            "/.codex/hooks.json",
+            "/.codex/config.toml",
+            "/.codex/copse-instructions.md",
+        ],
     )?;
 
     Ok(())
@@ -460,15 +498,44 @@ fn worktree_gitdir(worktree_path: &Path) -> anyhow::Result<PathBuf> {
     Ok(resolved)
 }
 
-/// Append gitignore-style `patterns` to the worktree's `$GIT_DIR/info/exclude`.
+/// Resolve `$GIT_COMMON_DIR` for `worktree_path`.
+///
+/// `info/exclude` lives in the **common** gitdir, not the per-worktree gitdir.
+/// For a linked worktree, the per-worktree gitdir contains a `commondir` file
+/// pointing back at the shared gitdir. For a main worktree, the gitdir itself
+/// is already the common dir, so no `commondir` file exists.
+///
+/// Writing `info/exclude` to the per-worktree gitdir silently has no effect
+/// on `git add` / `git status`, which is the bug this function fixes.
+fn worktree_common_dir(worktree_path: &Path) -> anyhow::Result<PathBuf> {
+    let gitdir = worktree_gitdir(worktree_path)?;
+    let commondir_file = gitdir.join("commondir");
+    if !commondir_file.exists() {
+        return Ok(gitdir);
+    }
+    let content = std::fs::read_to_string(&commondir_file)?;
+    let pointer = content.trim();
+    let pointer_path = Path::new(pointer);
+    if pointer_path.is_absolute() {
+        Ok(pointer_path.to_path_buf())
+    } else {
+        // `commondir` is relative to the per-worktree gitdir.
+        Ok(gitdir.join(pointer_path))
+    }
+}
+
+/// Append gitignore-style `patterns` to the repository's
+/// `$GIT_COMMON_DIR/info/exclude`.
 ///
 /// Patterns already present are skipped (idempotent). `info/exclude` is a
 /// local-only ignore list that lives inside `.git/` and is never committed or
 /// surfaced in `git status` / `git diff`, so this lets copse hide the agent
 /// configuration files it generates without modifying any tracked file.
+/// Because `info/exclude` lives in the common gitdir, a single write covers
+/// every linked worktree of the same repository.
 fn ensure_git_excluded(worktree_path: &Path, patterns: &[&str]) -> anyhow::Result<()> {
-    let gitdir = worktree_gitdir(worktree_path)?;
-    let info_dir = gitdir.join("info");
+    let common_dir = worktree_common_dir(worktree_path)?;
+    let info_dir = common_dir.join("info");
     std::fs::create_dir_all(&info_dir)?;
     let exclude_path = info_dir.join("exclude");
 
@@ -628,6 +695,31 @@ mod tests {
                 "--enable-auto-mode"
             ]
         );
+    }
+
+    #[test]
+    fn claudecode_command_args_appends_auto_commit_hint() {
+        let mut config = Config::default();
+        config.auto_commit = true;
+        let args = Agent::ClaudeCode.command_args(false, &config);
+
+        // `--append-system-prompt` must be followed immediately by the hint.
+        let pos = args
+            .iter()
+            .position(|a| a == "--append-system-prompt")
+            .expect("--append-system-prompt should be present when auto_commit=true");
+        assert_eq!(
+            args.get(pos + 1).map(String::as_str),
+            Some(AUTO_COMMIT_HINT)
+        );
+    }
+
+    #[test]
+    fn claudecode_command_args_omits_hint_when_auto_commit_off() {
+        let config = Config::default();
+        assert!(!config.auto_commit, "sanity: default is off");
+        let args = Agent::ClaudeCode.command_args(false, &config);
+        assert!(!args.iter().any(|a| a == "--append-system-prompt"));
     }
 
     // -- merge_settings tests --
@@ -946,6 +1038,68 @@ mod tests {
     }
 
     #[test]
+    fn codex_auto_commit_writes_instructions_file() {
+        let f = WorktreeFixture::new();
+        setup_codex_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        // The hint file is created with the AUTO_COMMIT_HINT body.
+        let hint = std::fs::read_to_string(f.wt.join(".codex/copse-instructions.md")).unwrap();
+        assert_eq!(hint, AUTO_COMMIT_HINT);
+
+        // config.toml points Codex at it via model_instructions_file. The
+        // value is a bare filename (no `.codex/` prefix) because Codex resolves
+        // it relative to the config.toml directory.
+        let config_content = std::fs::read_to_string(f.wt.join(".codex/config.toml")).unwrap();
+        let reparsed: toml::Table = config_content.parse().expect("valid TOML");
+        assert_eq!(
+            reparsed["model_instructions_file"].as_str(),
+            Some("copse-instructions.md")
+        );
+    }
+
+    #[test]
+    fn codex_auto_commit_respects_user_model_instructions_file() {
+        // If the user already configured model_instructions_file in their
+        // repo-root .codex/config.toml, copse must not silently clobber it
+        // and must not leave a stray copse-instructions.md behind.
+        let f = WorktreeFixture::new();
+        let parent_codex_dir = f.repo.join(".codex");
+        std::fs::create_dir_all(&parent_codex_dir).unwrap();
+        std::fs::write(
+            parent_codex_dir.join("config.toml"),
+            "model_instructions_file = \"custom.md\"\n",
+        )
+        .unwrap();
+
+        setup_codex_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        let config_content = std::fs::read_to_string(f.wt.join(".codex/config.toml")).unwrap();
+        let reparsed: toml::Table = config_content.parse().expect("valid TOML");
+        assert_eq!(
+            reparsed["model_instructions_file"].as_str(),
+            Some("custom.md"),
+            "user's model_instructions_file must be preserved"
+        );
+        assert!(
+            !f.wt.join(".codex/copse-instructions.md").exists(),
+            "copse-instructions.md should not be written when user overrides the key"
+        );
+    }
+
+    #[test]
+    fn codex_notification_only_does_not_write_instructions_file() {
+        // With only a notification command (and no auto_commit) copse still
+        // writes config.toml, but no instructions file should appear.
+        let f = WorktreeFixture::new();
+        setup_codex_worktree(&f.wt, &f.repo, false, Some("echo hi")).unwrap();
+
+        assert!(!f.wt.join(".codex/copse-instructions.md").exists());
+        let config_content = std::fs::read_to_string(f.wt.join(".codex/config.toml")).unwrap();
+        let reparsed: toml::Table = config_content.parse().expect("valid TOML");
+        assert!(!reparsed.contains_key("model_instructions_file"));
+    }
+
+    #[test]
     fn codex_notification_command_creates_config() {
         let f = WorktreeFixture::new();
         setup_codex_worktree(&f.wt, &f.repo, false, Some("echo hello")).unwrap();
@@ -1035,7 +1189,10 @@ mod tests {
 
     /// Helper: create a minimal linked-worktree setup. Returns the per-worktree
     /// gitdir path. `gitdir_value` is the raw text written after `gitdir: ` in
-    /// the worktree's `.git` file (absolute or relative).
+    /// the worktree's `.git` file (absolute or relative). Also creates the
+    /// common gitdir at `<tmp>/.git/` (empty except for `HEAD`) and writes a
+    /// `commondir` file in the per-worktree gitdir pointing at it — matching
+    /// what `git worktree add` produces.
     fn init_fake_linked_worktree(
         tmp: &Path,
         name: &str,
@@ -1044,6 +1201,16 @@ mod tests {
     ) -> PathBuf {
         std::fs::create_dir_all(gitdir_abs).unwrap();
         std::fs::write(gitdir_abs.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        // Per-worktree gitdir has a `commondir` file pointing at the common
+        // gitdir. We use an absolute path for determinism in tests.
+        let common_gitdir = tmp.join(".git");
+        std::fs::create_dir_all(&common_gitdir).unwrap();
+        std::fs::write(common_gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            gitdir_abs.join("commondir"),
+            format!("{}\n", common_gitdir.display()),
+        )
+        .unwrap();
         let wt = tmp.join(name);
         std::fs::create_dir_all(&wt).unwrap();
         std::fs::write(wt.join(".git"), format!("gitdir: {gitdir_value}\n")).unwrap();
@@ -1131,7 +1298,10 @@ mod tests {
     }
 
     #[test]
-    fn ensure_git_excluded_resolves_linked_worktree_gitdir_absolute() {
+    fn ensure_git_excluded_writes_to_common_dir_for_linked_worktree_absolute() {
+        // `info/exclude` lives in the common gitdir, not the per-worktree
+        // gitdir. A write into the per-worktree info/exclude would be silently
+        // ignored by git — which is exactly the bug this test guards against.
         let tmp = tempfile::tempdir().unwrap();
         let per_worktree_gitdir = tmp.path().join(".git/worktrees/wt");
         let wt = init_fake_linked_worktree(
@@ -1143,17 +1313,19 @@ mod tests {
 
         ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
 
-        let content = std::fs::read_to_string(per_worktree_gitdir.join("info/exclude")).unwrap();
+        let common_exclude = tmp.path().join(".git/info/exclude");
+        let content = std::fs::read_to_string(&common_exclude).unwrap();
         assert!(content.contains("/.codex/hooks.json"));
-        // The common gitdir info/exclude should NOT be written to.
-        assert!(!tmp.path().join(".git/info/exclude").exists());
+        // The per-worktree info/exclude must NOT be written (git would ignore it).
+        assert!(!per_worktree_gitdir.join("info/exclude").exists());
     }
 
     #[test]
-    fn ensure_git_excluded_resolves_linked_worktree_gitdir_relative() {
+    fn ensure_git_excluded_writes_to_common_dir_for_linked_worktree_relative() {
         // git writes the `gitdir:` pointer as a relative path when the worktree
         // lives next to the repo (e.g. `gitdir: ../.git/worktrees/wt`). The
-        // helper must resolve it against the worktree path.
+        // helper must resolve it against the worktree path, then find the
+        // common dir via `commondir`.
         let tmp = tempfile::tempdir().unwrap();
         let per_worktree_gitdir = tmp.path().join(".git/worktrees/wt");
         let wt = init_fake_linked_worktree(
@@ -1165,7 +1337,8 @@ mod tests {
 
         ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
 
-        let content = std::fs::read_to_string(per_worktree_gitdir.join("info/exclude")).unwrap();
+        let common_exclude = tmp.path().join(".git/info/exclude");
+        let content = std::fs::read_to_string(&common_exclude).unwrap();
         assert!(content.contains("/.codex/hooks.json"));
     }
 
@@ -1220,6 +1393,7 @@ mod tests {
         let exclude = f.read_info_exclude();
         assert!(exclude.contains("/.codex/hooks.json"));
         assert!(exclude.contains("/.codex/config.toml"));
+        assert!(exclude.contains("/.codex/copse-instructions.md"));
     }
 
     #[test]

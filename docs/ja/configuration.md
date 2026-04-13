@@ -409,12 +409,21 @@ copse はタスク起動時に各 worktree に `.codex/hooks.json` と `.codex/c
 2. **Stop hook** — `auto_commit` が有効な場合に追加（`codex_hooks` feature flag が必要）
 3. **Notify 設定** — `notification_command` が設定されている場合に追加
 
+### auto-commit の挙動を agent に通知
+
+`auto_commit` が有効なとき、copse は agent が Stop hook と衝突しないように挙動を事前に伝える。同じ短い説明を、各 agent のネイティブな system-prompt / instructions 経路で届ける:
+
+- **Claude Code** — 起動時に `--append-system-prompt "<hint>"` を付けることで、セッションのデフォルト system prompt に追記される。
+- **Codex CLI** — copse が `.codex/copse-instructions.md` を worktree に書き出し、`.codex/config.toml` に `model_instructions_file = "copse-instructions.md"` を設定する（Codex は相対パスを config.toml のディレクトリ基準で解決するので `.codex/` プレフィックスは付けない）。利用者の `.codex/config.toml` が既に `model_instructions_file` を設定していた場合、copse はそれを尊重して hint ファイルを書かない。
+
+内容は「Stop hook が残った変更を `copse auto-commit` として自動コミットするので、agent 自身が `git commit` を打つ必要はないが、意味のあるコミットメッセージを残したければ自分でコミットしてから agent ターンを終わらせても共存できる」という簡潔なリマインダー。
+
 ### 生成ファイルのローカル ignore
 
-copse が上記ファイル（`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`）を書き出す際、同じパスを worktree の `.git/info/exclude` にも登録する。これは git のローカル専用 ignore リストで、コミット対象にならず `git status` / `git diff` にも現れない。結果として:
+copse が上記ファイル（`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`, `.codex/copse-instructions.md`）を書き出す際、同じパスをリポジトリの `info/exclude` にも登録する。これは git のローカル専用 ignore リストで、コミット対象にならず `git status` / `git diff` にも現れない。結果として:
 
 - `auto_commit` の Stop hook（`git add -A`）がこれら生成ファイルを巻き込んでコミットすることがない。
 - リポジトリで追跡されている `.gitignore` は一切変更されない。利用者側に ignore ルールの追加を強いることもない。
-- エントリは当該 worktree にのみ閉じている（linked worktree の場合 `.git/worktrees/<name>/info/exclude`）ので、他のチェックアウトに漏れない。
+- `info/exclude` は共有 gitdir（`$GIT_COMMON_DIR/info/exclude`）に置かれ、同一リポジトリの全 linked worktree で共有される。1 回書けば全 worktree で効くので copse 管理のリポジトリでは便利だが、別 worktree でこれらのパスを手動で commit したい場合があることは頭に入れておくこと。
 
 > **注意:** `info/exclude` は既に追跡（tracked）済みのファイルには効かない。過去に誤って該当パス（例: `.codex/config.toml`）をコミットしてしまっている場合は、先に `git rm --cached <path>` で追跡を外してから本機構に任せること。

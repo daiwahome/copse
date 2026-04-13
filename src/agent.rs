@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
 
@@ -253,6 +253,11 @@ fn setup_claude_code_worktree(
         serde_json::to_string_pretty(&settings)? + "\n",
     )?;
 
+    // Ensure the generated file is ignored via $GIT_DIR/info/exclude so that
+    // `git add -A` from the auto-commit Stop hook does not pick it up. This
+    // keeps the worktree free of any `.gitignore` diff.
+    ensure_git_excluded(worktree_path, &["/.claude/settings.local.json"])?;
+
     Ok(())
 }
 
@@ -397,6 +402,106 @@ fn setup_codex_worktree(
         std::fs::write(&config_path, toml::to_string_pretty(&table)?)?;
     }
 
+    // Ensure generated files are ignored via $GIT_DIR/info/exclude so that
+    // `git add -A` from the auto-commit Stop hook does not pick them up. This
+    // keeps the worktree free of any `.gitignore` diff.
+    ensure_git_excluded(
+        worktree_path,
+        &["/.codex/hooks.json", "/.codex/config.toml"],
+    )?;
+
+    Ok(())
+}
+
+const COPSE_MARKER: &str = "# managed by copse";
+
+/// Resolve the per-worktree `$GIT_DIR` for `worktree_path`.
+///
+/// - If `<worktree>/.git` is a directory, it IS the gitdir (main worktree).
+/// - If it is a file, it contains `gitdir: <path>` pointing at the linked
+///   worktree's gitdir (typically `<repo>/.git/worktrees/<name>`).
+///
+/// The resolved path is sanity-checked: a valid git directory always contains
+/// a `HEAD` file. This prevents writing to arbitrary paths if the `.git` file
+/// was hand-crafted or corrupted.
+fn worktree_gitdir(worktree_path: &Path) -> anyhow::Result<PathBuf> {
+    let git_path = worktree_path.join(".git");
+    let meta = std::fs::metadata(&git_path)?;
+    let resolved = if meta.is_dir() {
+        git_path.clone()
+    } else {
+        let content = std::fs::read_to_string(&git_path)?;
+        let pointer = content
+            .lines()
+            .find_map(|l| l.strip_prefix("gitdir:").map(str::trim))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    ".git at {} is not a valid gitdir pointer",
+                    git_path.display()
+                )
+            })?;
+        let pointer_path = Path::new(pointer);
+        if pointer_path.is_absolute() {
+            pointer_path.to_path_buf()
+        } else {
+            worktree_path.join(pointer_path)
+        }
+    };
+
+    // Sanity check: a git directory (main or linked worktree) always has HEAD.
+    // Refuse to write to a location that does not look like a git dir.
+    if !resolved.join("HEAD").exists() {
+        anyhow::bail!(
+            "resolved gitdir {} does not look like a git directory (missing HEAD)",
+            resolved.display()
+        );
+    }
+
+    Ok(resolved)
+}
+
+/// Append gitignore-style `patterns` to the worktree's `$GIT_DIR/info/exclude`.
+///
+/// Patterns already present are skipped (idempotent). `info/exclude` is a
+/// local-only ignore list that lives inside `.git/` and is never committed or
+/// surfaced in `git status` / `git diff`, so this lets copse hide the agent
+/// configuration files it generates without modifying any tracked file.
+fn ensure_git_excluded(worktree_path: &Path, patterns: &[&str]) -> anyhow::Result<()> {
+    let gitdir = worktree_gitdir(worktree_path)?;
+    let info_dir = gitdir.join("info");
+    std::fs::create_dir_all(&info_dir)?;
+    let exclude_path = info_dir.join("exclude");
+
+    let existing = std::fs::read_to_string(&exclude_path).unwrap_or_default();
+    let already_present: std::collections::HashSet<&str> =
+        existing.lines().map(str::trim).collect();
+    let missing: Vec<&str> = patterns
+        .iter()
+        .copied()
+        .filter(|p| !already_present.contains(p.trim()))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    // Whether the copse marker is already present as a dedicated line. We
+    // compare line-by-line (rather than via substring search) so that an
+    // unrelated line happening to contain the marker text cannot confuse us.
+    let marker_present = existing.lines().map(str::trim).any(|l| l == COPSE_MARKER);
+
+    let mut content = existing;
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    if !marker_present {
+        content.push_str(COPSE_MARKER);
+        content.push('\n');
+    }
+    for p in missing {
+        content.push_str(p);
+        content.push('\n');
+    }
+    std::fs::write(&exclude_path, content)?;
     Ok(())
 }
 
@@ -603,6 +708,12 @@ mod tests {
             let wt = tmp.path().join("wt");
             std::fs::create_dir_all(&repo).unwrap();
             std::fs::create_dir_all(&wt).unwrap();
+            // Simulate a main-worktree `.git/` directory so that
+            // `ensure_git_excluded` can resolve `$GIT_DIR` and write to
+            // `info/exclude` during setup. `HEAD` is required by
+            // `worktree_gitdir`'s sanity check.
+            std::fs::create_dir_all(wt.join(".git/info")).unwrap();
+            std::fs::write(wt.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
             Self {
                 _tmp: tmp,
                 repo,
@@ -620,6 +731,10 @@ mod tests {
             let content =
                 std::fs::read_to_string(self.wt.join(".claude/settings.local.json")).unwrap();
             serde_json::from_str(&content).unwrap()
+        }
+
+        fn read_info_exclude(&self) -> String {
+            std::fs::read_to_string(self.wt.join(".git/info/exclude")).unwrap_or_default()
         }
     }
 
@@ -908,6 +1023,215 @@ mod tests {
         let config_content = std::fs::read_to_string(f.wt.join(".codex/config.toml")).unwrap();
         // Parent settings preserved even when no copse flags are set
         assert!(config_content.contains("model = \"gpt-5-codex\""));
+    }
+
+    // -- ensure_git_excluded / worktree_gitdir tests --
+
+    /// Helper: create a minimal main-worktree `.git/` directory with `HEAD`.
+    fn init_fake_main_gitdir(wt: &Path) {
+        std::fs::create_dir_all(wt.join(".git/info")).unwrap();
+        std::fs::write(wt.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    }
+
+    /// Helper: create a minimal linked-worktree setup. Returns the per-worktree
+    /// gitdir path. `gitdir_value` is the raw text written after `gitdir: ` in
+    /// the worktree's `.git` file (absolute or relative).
+    fn init_fake_linked_worktree(
+        tmp: &Path,
+        name: &str,
+        gitdir_value: &str,
+        gitdir_abs: &Path,
+    ) -> PathBuf {
+        std::fs::create_dir_all(gitdir_abs).unwrap();
+        std::fs::write(gitdir_abs.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let wt = tmp.join(name);
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {gitdir_value}\n")).unwrap();
+        wt
+    }
+
+    #[test]
+    fn ensure_git_excluded_writes_patterns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        init_fake_main_gitdir(&wt);
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json", "/.codex/config.toml"]).unwrap();
+
+        let content = std::fs::read_to_string(wt.join(".git/info/exclude")).unwrap();
+        assert!(content.contains("# managed by copse"));
+        assert!(content.contains("/.codex/hooks.json"));
+        assert!(content.contains("/.codex/config.toml"));
+    }
+
+    #[test]
+    fn ensure_git_excluded_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        init_fake_main_gitdir(&wt);
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+
+        let content = std::fs::read_to_string(wt.join(".git/info/exclude")).unwrap();
+        let occurrences = content.matches("/.codex/hooks.json").count();
+        assert_eq!(occurrences, 1, "pattern should appear only once");
+        let markers = content.matches("# managed by copse").count();
+        assert_eq!(markers, 1, "marker should appear only once");
+    }
+
+    #[test]
+    fn ensure_git_excluded_adds_new_pattern_without_duplicating_existing() {
+        // First call registers A; second call registers both A and B. The
+        // final file should have A exactly once and B once, with a single
+        // marker line.
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        init_fake_main_gitdir(&wt);
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+        ensure_git_excluded(&wt, &["/.codex/hooks.json", "/.claude/settings.local.json"]).unwrap();
+
+        let content = std::fs::read_to_string(wt.join(".git/info/exclude")).unwrap();
+        assert_eq!(content.matches("/.codex/hooks.json").count(), 1);
+        assert_eq!(content.matches("/.claude/settings.local.json").count(), 1);
+        assert_eq!(content.matches("# managed by copse").count(), 1);
+    }
+
+    #[test]
+    fn ensure_git_excluded_preserves_existing_exclude_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        init_fake_main_gitdir(&wt);
+        std::fs::write(wt.join(".git/info/exclude"), "# user rule\nfoo.log\n").unwrap();
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+
+        let content = std::fs::read_to_string(wt.join(".git/info/exclude")).unwrap();
+        assert!(content.starts_with("# user rule\nfoo.log\n"));
+        assert!(content.contains("/.codex/hooks.json"));
+    }
+
+    #[test]
+    fn ensure_git_excluded_does_not_false_match_marker_substring() {
+        // A user-written line that merely contains the marker text as a
+        // substring should NOT be treated as an existing marker. copse should
+        // still emit its own dedicated marker line on first write.
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        init_fake_main_gitdir(&wt);
+        std::fs::write(wt.join(".git/info/exclude"), "foo # managed by copse bar\n").unwrap();
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+
+        let content = std::fs::read_to_string(wt.join(".git/info/exclude")).unwrap();
+        // A dedicated marker line should now exist in addition to the pre-existing
+        // user line. We assert by checking that a bare marker line is present.
+        assert!(content.lines().any(|l| l.trim() == "# managed by copse"));
+    }
+
+    #[test]
+    fn ensure_git_excluded_resolves_linked_worktree_gitdir_absolute() {
+        let tmp = tempfile::tempdir().unwrap();
+        let per_worktree_gitdir = tmp.path().join(".git/worktrees/wt");
+        let wt = init_fake_linked_worktree(
+            tmp.path(),
+            "wt",
+            &per_worktree_gitdir.display().to_string(),
+            &per_worktree_gitdir,
+        );
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+
+        let content = std::fs::read_to_string(per_worktree_gitdir.join("info/exclude")).unwrap();
+        assert!(content.contains("/.codex/hooks.json"));
+        // The common gitdir info/exclude should NOT be written to.
+        assert!(!tmp.path().join(".git/info/exclude").exists());
+    }
+
+    #[test]
+    fn ensure_git_excluded_resolves_linked_worktree_gitdir_relative() {
+        // git writes the `gitdir:` pointer as a relative path when the worktree
+        // lives next to the repo (e.g. `gitdir: ../.git/worktrees/wt`). The
+        // helper must resolve it against the worktree path.
+        let tmp = tempfile::tempdir().unwrap();
+        let per_worktree_gitdir = tmp.path().join(".git/worktrees/wt");
+        let wt = init_fake_linked_worktree(
+            tmp.path(),
+            "wt",
+            "../.git/worktrees/wt",
+            &per_worktree_gitdir,
+        );
+
+        ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap();
+
+        let content = std::fs::read_to_string(per_worktree_gitdir.join("info/exclude")).unwrap();
+        assert!(content.contains("/.codex/hooks.json"));
+    }
+
+    #[test]
+    fn ensure_git_excluded_rejects_malformed_git_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        // A `.git` file without a `gitdir:` prefix is malformed.
+        std::fs::write(wt.join(".git"), "not a gitdir pointer\n").unwrap();
+
+        let err = ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap_err();
+        assert!(
+            err.to_string().contains("gitdir pointer"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn ensure_git_excluded_rejects_non_git_directory() {
+        // A directory that has `.git/` but no `HEAD` is not a valid git dir.
+        // Refuse to write to it rather than silently polluting an arbitrary
+        // directory.
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = tmp.path().join("wt");
+        std::fs::create_dir_all(wt.join(".git")).unwrap();
+
+        let err = ensure_git_excluded(&wt, &["/.codex/hooks.json"]).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("does not look like a git directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn claude_setup_writes_info_exclude() {
+        let f = WorktreeFixture::new();
+
+        setup_claude_code_worktree(&f.wt, &f.repo, true, false, None).unwrap();
+
+        let exclude = f.read_info_exclude();
+        assert!(exclude.contains("/.claude/settings.local.json"));
+    }
+
+    #[test]
+    fn codex_setup_writes_info_exclude() {
+        let f = WorktreeFixture::new();
+
+        setup_codex_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        let exclude = f.read_info_exclude();
+        assert!(exclude.contains("/.codex/hooks.json"));
+        assert!(exclude.contains("/.codex/config.toml"));
+    }
+
+    #[test]
+    fn setup_skips_info_exclude_when_nothing_written() {
+        let f = WorktreeFixture::new();
+
+        // No flags, no parent — setup returns early before writing anything.
+        setup_claude_code_worktree(&f.wt, &f.repo, false, false, None).unwrap();
+        setup_codex_worktree(&f.wt, &f.repo, false, None).unwrap();
+
+        // info/exclude should not have been touched.
+        assert!(!f.wt.join(".git/info/exclude").exists());
     }
 
     // -- Spinner / screen detection tests (moved from task.rs) --

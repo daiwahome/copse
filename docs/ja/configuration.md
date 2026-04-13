@@ -408,3 +408,13 @@ copse はタスク起動時に各 worktree に `.codex/hooks.json` と `.codex/c
 1. **リポジトリ hooks** — リポジトリルートの `.codex/hooks.json` (存在する場合)
 2. **Stop hook** — `auto_commit` が有効な場合に追加（`codex_hooks` feature flag が必要）
 3. **Notify 設定** — `notification_command` が設定されている場合に追加
+
+### 生成ファイルのローカル ignore
+
+copse が上記ファイル（`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`）を書き出す際、同じパスを worktree の `.git/info/exclude` にも登録する。これは git のローカル専用 ignore リストで、コミット対象にならず `git status` / `git diff` にも現れない。結果として:
+
+- `auto_commit` の Stop hook（`git add -A`）がこれら生成ファイルを巻き込んでコミットすることがない。
+- リポジトリで追跡されている `.gitignore` は一切変更されない。利用者側に ignore ルールの追加を強いることもない。
+- エントリは当該 worktree にのみ閉じている（linked worktree の場合 `.git/worktrees/<name>/info/exclude`）ので、他のチェックアウトに漏れない。
+
+> **注意:** `info/exclude` は既に追跡（tracked）済みのファイルには効かない。過去に誤って該当パス（例: `.codex/config.toml`）をコミットしてしまっている場合は、先に `git rm --cached <path>` で追跡を外してから本機構に任せること。

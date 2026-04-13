@@ -408,3 +408,13 @@ copse writes `.codex/hooks.json` and/or `.codex/config.toml` into each worktree 
 1. **Repository hooks** — `.codex/hooks.json` at the repository root (if it exists)
 2. **Stop hook** — added when `auto_commit` is enabled (requires `codex_hooks` feature flag)
 3. **Notify setting** — added when `notification_command` is set
+
+### Local ignore for generated files
+
+Whenever copse writes one of the files above (`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`), it also registers that path in the worktree's `.git/info/exclude`. This is git's local-only ignore list — it is never committed and does not appear in `git status` or `git diff`. As a result:
+
+- The `auto_commit` Stop hook (which runs `git add -A`) never sweeps these generated files into a commit.
+- Your repository's tracked `.gitignore` is untouched; copse does not require consumers to add rules on their behalf.
+- The entries are scoped to the current worktree only (`.git/worktrees/<name>/info/exclude` for linked worktrees), so they do not leak to other checkouts.
+
+> **Note:** `info/exclude` has no effect on files that are already tracked. If your repository previously committed one of these paths (e.g. a stray `.codex/config.toml`), untrack it with `git rm --cached <path>` before relying on this mechanism.

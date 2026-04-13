@@ -41,6 +41,12 @@ pub struct Task {
     /// Whether a continuable agent session exists for this task.
     /// When true, session-continuation flags are passed on the next launch.
     pub has_session: bool,
+    /// Cached set of agents that have a session marker for this task on disk.
+    /// Used by the task list UI to display multiple agents without per-frame
+    /// filesystem stat calls. Kept in sync with marker creation in `write_input`.
+    /// Private so callers cannot desync it from `has_session` — use
+    /// [`Task::has_marker_for`] to query.
+    session_agents: Vec<Agent>,
     /// Cached number of commits ahead of upstream (None = not yet computed)
     pub commits_ahead: Option<usize>,
     /// Whether the upstream branch currently exists in the repo
@@ -116,6 +122,24 @@ impl Task {
     /// instead of the value cached on the Task (which reflects the previous agent).
     pub fn has_session_for(worktree_base_dir: &Path, name: &str, agent: &Agent) -> bool {
         Self::session_marker_path_for(worktree_base_dir, name, agent).exists()
+    }
+
+    /// Whether this task has a session marker for the given agent, according
+    /// to the cached `session_agents` set. The cache is seeded on construction
+    /// and updated when `write_input` creates a new marker.
+    pub fn has_marker_for(&self, agent: &Agent) -> bool {
+        self.session_agents.contains(agent)
+    }
+
+    /// Scan the worktree base for session markers and return the set of agents
+    /// that have one for this task. Populated once at Task construction so the
+    /// render path can consult a cached list instead of doing per-frame stats.
+    fn scan_session_agents(worktree_base_dir: &Path, name: &str) -> Vec<Agent> {
+        Agent::all()
+            .iter()
+            .filter(|a| Self::has_session_for(worktree_base_dir, name, a))
+            .cloned()
+            .collect()
     }
 
     fn session_marker_path(&self) -> PathBuf {
@@ -376,6 +400,7 @@ impl Task {
             status: TaskStatus::Stopped,
             agent,
             has_session: false,
+            session_agents: Vec::new(),
             commits_ahead: None,
             upstream_exists: true,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
@@ -403,6 +428,7 @@ impl Task {
     ) -> Self {
         let upstream = Self::load_upstream(repo_root, &name);
         let has_session = Self::session_marker_path_for(worktree_base_dir, &name, &agent).exists();
+        let session_agents = Self::scan_session_agents(worktree_base_dir, &name);
         let commits_ahead = upstream
             .as_ref()
             .and_then(|u| Self::compute_commits_ahead(repo_root, &name, u));
@@ -417,6 +443,7 @@ impl Task {
             status: TaskStatus::Stopped,
             agent,
             has_session,
+            session_agents,
             commits_ahead,
             upstream_exists,
             parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK_LEN))),
@@ -538,6 +565,7 @@ impl Task {
             }
         });
 
+        let session_agents = Self::scan_session_agents(&worktree_base_dir, &name);
         Ok(Task {
             id,
             name,
@@ -545,6 +573,7 @@ impl Task {
             status: TaskStatus::Running,
             agent,
             has_session: false,
+            session_agents,
             commits_ahead: None,
             upstream_exists: true,
             worktree_path,
@@ -671,6 +700,9 @@ impl Task {
             if !self.has_session {
                 self.has_session = true;
                 let _ = std::fs::write(self.session_marker_path(), "");
+                if !self.session_agents.contains(&self.agent) {
+                    self.session_agents.push(self.agent.clone());
+                }
             }
             // Optimistically clear the waiting flag when Enter is submitted so the
             // list view transitions from "waiting" to "running" immediately.
@@ -975,5 +1007,40 @@ mod tests {
     #[test]
     fn parse_invalid_remote_url() {
         assert_eq!(parse_remote_url("not-a-url"), None);
+    }
+
+    // -- session_agents cache tests --
+
+    #[test]
+    fn scan_session_agents_returns_empty_when_no_markers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let agents = Task::scan_session_agents(tmp.path(), "example");
+        assert!(agents.is_empty());
+    }
+
+    #[test]
+    fn scan_session_agents_finds_each_agent_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Only Claude Code marker exists.
+        std::fs::write(tmp.path().join("example.claudecode.has-session"), "").unwrap();
+        let agents = Task::scan_session_agents(tmp.path(), "example");
+        assert_eq!(agents, vec![Agent::ClaudeCode]);
+
+        // Now add a Codex marker — both should be reported.
+        std::fs::write(tmp.path().join("example.codex.has-session"), "").unwrap();
+        let agents = Task::scan_session_agents(tmp.path(), "example");
+        assert!(agents.contains(&Agent::ClaudeCode));
+        assert!(agents.contains(&Agent::Codex));
+        assert_eq!(agents.len(), 2);
+    }
+
+    #[test]
+    fn scan_session_agents_ignores_markers_for_other_tasks() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("other.claudecode.has-session"), "").unwrap();
+        // Also a legacy agent-less marker for the same task name — must not match.
+        std::fs::write(tmp.path().join("example.has-session"), "").unwrap();
+        let agents = Task::scan_session_agents(tmp.path(), "example");
+        assert!(agents.is_empty());
     }
 }

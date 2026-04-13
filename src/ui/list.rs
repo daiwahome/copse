@@ -5,8 +5,18 @@ use ratatui::{
     widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
-use crate::{app::App, task::TaskStatus};
+use crate::{app::App, config::Agent, task::TaskStatus};
+
+/// Returns the brand color used for each agent's icon in the task list.
+/// Kept in the UI layer to avoid coupling `src/agent.rs` to ratatui.
+fn agent_icon_color(agent: &Agent) -> Color {
+    match agent {
+        Agent::ClaudeCode => Color::Indexed(166), // Claude orange
+        Agent::Codex => Color::Indexed(36),       // teal
+    }
+}
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let chunks = Layout::default()
@@ -35,6 +45,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         .unwrap_or(0)
         .max(8); // "Upstream".len()
     let max_status_len = 8; // "deleting" is the longest status text
+    let max_agents_len: usize = 6; // "Agents".len() — accommodates header and future multi-agent display
 
     let items: Vec<ListItem> = app
         .tasks
@@ -83,7 +94,39 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
                     format!("  {:<width$}", status_text, width = max_status_len),
                     Style::default().fg(icon_color),
                 ),
+                Span::raw("  "),
             ];
+            // Agents column: show the task's current agent plus any other agent
+            // that has a session marker. Active agent is colored when the task
+            // is running; otherwise all shown agents are grey. Session-marker
+            // lookup uses the `session_agents` cache on the Task to avoid
+            // per-frame filesystem stats.
+            let is_running = task.status == TaskStatus::Running;
+            let agents_to_show: Vec<&Agent> = Agent::all()
+                .iter()
+                .filter(|a| **a == task.agent || task.has_marker_for(a))
+                .collect();
+            for (i, agent) in agents_to_show.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw(" "));
+                }
+                let color = if is_running && **agent == task.agent {
+                    agent_icon_color(agent)
+                } else {
+                    Color::DarkGray
+                };
+                spans.push(Span::styled(agent.icon(), Style::default().fg(color)));
+            }
+            // Pad agent cell to `max_agents_len`. Use unicode-width so that
+            // icons with varying terminal widths (including any future additions)
+            // align correctly; inter-icon spaces contribute 1 col each.
+            let icons_width: usize = agents_to_show.iter().map(|a| a.icon().width()).sum();
+            let separators_width = agents_to_show.len().saturating_sub(1);
+            let rendered_width = icons_width + separators_width;
+            let pad = max_agents_len.saturating_sub(rendered_width);
+            if pad > 0 {
+                spans.push(Span::raw(" ".repeat(pad)));
+            }
             if !ahead_text.is_empty() {
                 spans.push(Span::styled(
                     format!("  {ahead_text}"),
@@ -126,6 +169,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         ),
         Span::styled(
             format!("  {:<width$}", "Status", width = max_status_len),
+            header_style,
+        ),
+        Span::styled(
+            format!("  {:<width$}", "Agents", width = max_agents_len),
             header_style,
         ),
         Span::styled("  Commits", header_style),

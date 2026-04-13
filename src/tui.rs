@@ -18,7 +18,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::mpsc;
 
-use crate::{app::App, event::AppEvent, ui};
+use crate::{app::App, event::AppEvent, process::CommandLogExt, ui};
 
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
@@ -200,7 +200,7 @@ impl Tui {
                     &format!("{upstream}..{branch}"),
                 ])
                 .current_dir(repo_root)
-                .output();
+                .run_output();
             let raw = log_output
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
                 .unwrap_or_default();
@@ -225,7 +225,7 @@ impl Tui {
             let out = std::process::Command::new("git")
                 .args(["merge", "--squash", &branch])
                 .current_dir(&upstream_wt)
-                .output()?;
+                .run_output()?;
             if !out.status.success() {
                 anyhow::bail!(
                     "merge --squash failed: {}",
@@ -249,7 +249,7 @@ impl Tui {
                 .stdin(std::process::Stdio::inherit())
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
-                .status();
+                .run_status();
 
             let _ = std::fs::remove_file(&tmp);
 
@@ -258,7 +258,7 @@ impl Tui {
                 let _ = std::process::Command::new("git")
                     .args(["reset", "--hard"])
                     .current_dir(&upstream_wt)
-                    .output();
+                    .run_output();
                 anyhow::bail!("commit aborted");
             }
 
@@ -276,7 +276,7 @@ impl Tui {
             let out = std::process::Command::new("git")
                 .args(["reset", "--hard", upstream])
                 .current_dir(&task_wt)
-                .output();
+                .run_output();
             match out {
                 Ok(o) if !o.status.success() => {
                     result = Err(anyhow::anyhow!(

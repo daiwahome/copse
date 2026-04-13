@@ -11,8 +11,17 @@ use etcetera::BaseStrategy;
 
 use crate::config::{Agent, Backend, Config};
 use crate::event::{AppEvent, TaskId};
+use crate::process::CommandLogExt;
 
 const SCROLLBACK_LEN: usize = 10_000;
+
+/// Polling interval when waiting for the PTY child to exit.
+const CHILD_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Maximum time to wait for the PTY child to exit before giving up
+/// (falling back to SIGKILL in `kill_and_reap_child`, or a warn log in
+/// `reap_after_exit`).
+const CHILD_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
 
 pub struct SpawnParams {
     pub id: TaskId,
@@ -172,7 +181,7 @@ impl Task {
             let branch_exists = std::process::Command::new("git")
                 .args(["rev-parse", "--verify", &branch])
                 .current_dir(&repo_root)
-                .output()
+                .run_output()
                 .map(|o| o.status.success())
                 .unwrap_or(false);
 
@@ -181,7 +190,7 @@ impl Task {
                 let wt_list = std::process::Command::new("git")
                     .args(["worktree", "list", "--porcelain"])
                     .current_dir(&repo_root)
-                    .output()
+                    .run_output()
                     .ok();
 
                 if let Some(out) = wt_list {
@@ -215,7 +224,7 @@ impl Task {
                 let _ = std::process::Command::new("git")
                     .args(["worktree", "prune"])
                     .current_dir(&repo_root)
-                    .output();
+                    .run_output();
 
                 // Ensure the parent directory exists before git worktree add
                 if let Some(parent) = worktree_path.parent() {
@@ -233,7 +242,7 @@ impl Task {
                             &branch,
                         ])
                         .current_dir(&repo_root)
-                        .output()?;
+                        .run_output()?;
                     if !out.status.success() {
                         anyhow::bail!(
                             "git worktree add failed: {}",
@@ -245,7 +254,7 @@ impl Task {
                     let out = std::process::Command::new("git")
                         .args(["worktree", "add", worktree_path.to_str().unwrap(), &branch])
                         .current_dir(&repo_root)
-                        .output()?;
+                        .run_output()?;
                     if !out.status.success() {
                         anyhow::bail!(
                             "git worktree add failed: {}",
@@ -269,7 +278,7 @@ impl Task {
                         &upstream,
                     ])
                     .current_dir(&repo_root)
-                    .output()?;
+                    .run_output()?;
                 if !out.status.success() {
                     anyhow::bail!(
                         "git worktree add -b failed: {}",
@@ -281,7 +290,7 @@ impl Task {
                 let _ = std::process::Command::new("git")
                     .args(["branch", "--set-upstream-to", &upstream, &branch])
                     .current_dir(&repo_root)
-                    .output();
+                    .run_output();
             }
 
             Ok(worktree_path)
@@ -299,7 +308,7 @@ impl Task {
                 &format!("refs/heads/{branch}"),
             ])
             .current_dir(repo_root)
-            .output()
+            .run_output()
             .ok()?;
         if output.status.success() {
             let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -320,7 +329,7 @@ impl Task {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .current_dir(repo_root)
-            .status()
+            .run_status()
             .map(|s| s.success())
             .unwrap_or(false)
     }
@@ -331,7 +340,7 @@ impl Task {
         let output = std::process::Command::new("git")
             .args(["rev-list", "--count", &format!("{upstream}..{branch}")])
             .current_dir(repo_root)
-            .output()
+            .run_output()
             .ok()?;
         if output.status.success() {
             String::from_utf8_lossy(&output.stdout)
@@ -349,7 +358,7 @@ impl Task {
         let output = std::process::Command::new("git")
             .args(["branch", "--format=%(refname:short)"])
             .current_dir(repo_root)
-            .output();
+            .run_output();
 
         match output {
             Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
@@ -370,7 +379,7 @@ impl Task {
         let output = std::process::Command::new("git")
             .args(["branch", "--list", "copse/*", "--format=%(refname:short)"])
             .current_dir(repo_root)
-            .output();
+            .run_output();
 
         match output {
             Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
@@ -524,7 +533,21 @@ impl Task {
             &command_args,
         );
 
-        let child = pair.slave.spawn_command(cmd)?;
+        log::debug!(
+            "pty spawn: {} {} (cwd={})",
+            agent.command_name(),
+            command_args.join(" "),
+            worktree_path.display()
+        );
+        let child = pair.slave.spawn_command(cmd).map_err(|e| {
+            log::warn!(
+                "pty spawn failed: {} {} (cwd={}): {e}",
+                agent.command_name(),
+                command_args.join(" "),
+                worktree_path.display()
+            );
+            e
+        })?;
         // The slave side is no longer needed once the child is spawned
         drop(pair.slave);
 
@@ -612,20 +635,20 @@ impl Task {
                 worktree_path.to_str().unwrap_or(""),
             ])
             .current_dir(repo_root)
-            .output()?;
+            .run_output()?;
         if !out.status.success() {
             // Prune and retry if stale
             let _ = std::process::Command::new("git")
                 .args(["worktree", "prune"])
                 .current_dir(repo_root)
-                .output();
+                .run_output();
         }
 
         // Delete branch
         let out = std::process::Command::new("git")
             .args(["branch", "-D", &branch])
             .current_dir(repo_root)
-            .output()?;
+            .run_output()?;
         if !out.status.success() {
             anyhow::bail!(
                 "branch delete failed: {}",
@@ -663,7 +686,7 @@ impl Task {
         let out = std::process::Command::new("git")
             .args(["rev-parse", upstream])
             .current_dir(repo_root)
-            .output()?;
+            .run_output()?;
         if !out.status.success() {
             anyhow::bail!(
                 "Could not resolve upstream '{}': {}",
@@ -677,7 +700,7 @@ impl Task {
         let out = std::process::Command::new("git")
             .args(["reset", "--hard", &upstream_commit])
             .current_dir(&worktree_path)
-            .output()?;
+            .run_output()?;
         if !out.status.success() {
             anyhow::bail!("reset failed: {}", String::from_utf8_lossy(&out.stderr));
         }
@@ -745,7 +768,7 @@ impl Task {
         let output = std::process::Command::new("git")
             .args(["worktree", "list", "--porcelain"])
             .current_dir(repo_root)
-            .output()?;
+            .run_output()?;
         let listing = String::from_utf8_lossy(&output.stdout);
 
         let mut worktree_path: Option<PathBuf> = None;
@@ -777,7 +800,7 @@ impl Task {
                 let out = std::process::Command::new("git")
                     .args(["merge", "--ff-only", commit])
                     .current_dir(&wt_path)
-                    .output()?;
+                    .run_output()?;
                 if !out.status.success() {
                     anyhow::bail!(
                         "merge --ff-only failed: {}",
@@ -789,7 +812,7 @@ impl Task {
                 let out = std::process::Command::new("git")
                     .args(["branch", "-f", branch, commit])
                     .current_dir(repo_root)
-                    .output()?;
+                    .run_output()?;
                 if !out.status.success() {
                     anyhow::bail!("branch -f failed: {}", String::from_utf8_lossy(&out.stderr));
                 }
@@ -804,7 +827,7 @@ impl Task {
         let out = std::process::Command::new("git")
             .args(["switch", branch])
             .current_dir(worktree)
-            .output()?;
+            .run_output()?;
         if !out.status.success() {
             anyhow::bail!("switch failed: {}", String::from_utf8_lossy(&out.stderr));
         }
@@ -817,7 +840,7 @@ impl Task {
         let out = std::process::Command::new("git")
             .args(["branch", "--set-upstream-to", upstream, &branch])
             .current_dir(repo_root)
-            .output()?;
+            .run_output()?;
         if !out.status.success() {
             anyhow::bail!(
                 "set-upstream-to failed: {}",
@@ -845,6 +868,53 @@ impl Task {
         Ok(())
     }
 
+    /// After the PTY reader has detected EOF, reap the child and log its exit
+    /// status. Non-zero exits are logged at `warn` level so that an agent
+    /// (claude / codex) crashing at startup leaves a trace for diagnosis.
+    ///
+    /// Uses `try_wait` with a short timeout rather than blocking `wait` to
+    /// stay responsive — reader EOF normally means the child has already
+    /// exited, but a PTY master-side close could theoretically arrive first.
+    pub fn reap_after_exit(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+
+        let start = std::time::Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(s)) => break s,
+                Ok(None) if start.elapsed() < CHILD_REAP_TIMEOUT => {
+                    std::thread::sleep(CHILD_POLL_INTERVAL);
+                }
+                Ok(None) => {
+                    // Hand the child back so `kill_and_reap_child` (via
+                    // `detach`, `kill`, or `Drop`) can still reap it later.
+                    // Dropping it here would lose the handle and risk a
+                    // lingering/zombie process.
+                    log::warn!("pty reap timed out: task={}", self.name);
+                    self.child = Some(child);
+                    return;
+                }
+                Err(e) => {
+                    log::warn!("pty wait failed: task={}: {e}", self.name);
+                    self.child = Some(child);
+                    return;
+                }
+            }
+        };
+
+        if status.success() {
+            log::debug!("pty exited: task={}", self.name);
+        } else {
+            log::warn!(
+                "pty exited non-zero ({}): task={}",
+                status.exit_code(),
+                self.name
+            );
+        }
+    }
+
     /// Kill the PTY child process and wait for it to exit.
     ///
     /// This MUST be called before the writer is dropped.
@@ -861,14 +931,12 @@ impl Task {
         let _ = child.kill(); // sends SIGHUP
 
         // Poll for exit with a timeout; fall back to SIGKILL if needed.
-        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
-        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
         let start = std::time::Instant::now();
         loop {
             match child.try_wait() {
                 Ok(Some(_)) => break,
-                Ok(None) if start.elapsed() < TIMEOUT => {
-                    std::thread::sleep(POLL_INTERVAL);
+                Ok(None) if start.elapsed() < CHILD_REAP_TIMEOUT => {
+                    std::thread::sleep(CHILD_POLL_INTERVAL);
                 }
                 _ => {
                     // Timed out or error — force kill with SIGKILL.
@@ -926,7 +994,7 @@ fn origin_url(repo_root: &Path) -> Option<String> {
     let output = std::process::Command::new("git")
         .args(["remote", "get-url", "origin"])
         .current_dir(repo_root)
-        .output()
+        .run_output()
         .ok()?;
     if output.status.success() {
         let url = String::from_utf8_lossy(&output.stdout).trim().to_string();

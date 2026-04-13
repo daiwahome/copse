@@ -7,6 +7,7 @@ mod diff_filter;
 mod event;
 mod keybind;
 mod logging;
+mod process;
 mod shell;
 mod task;
 mod theme;
@@ -17,6 +18,7 @@ use std::path::PathBuf;
 
 use app::App;
 use clap::Parser;
+use process::CommandLogExt;
 use tui::Tui;
 
 #[derive(Parser)]
@@ -124,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
 fn find_repo_root() -> anyhow::Result<PathBuf> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
-        .output()?;
+        .run_output()?;
 
     if !output.status.success() {
         anyhow::bail!("Not in a git repository. copse must be run from within a git repository.");

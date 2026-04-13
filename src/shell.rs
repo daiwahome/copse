@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::backend::is_tmux_available;
 use crate::config::ShellMode;
+use crate::process::{self, CommandLogExt};
 
 impl ShellMode {
     /// Check that the shell mode's external dependency is available.
@@ -35,7 +36,7 @@ impl ShellMode {
             ShellMode::Tmux => {
                 let status = std::process::Command::new("tmux")
                     .args(["new-window", "-c", &worktree_path.to_string_lossy()])
-                    .status()?;
+                    .run_status()?;
                 if !status.success() {
                     anyhow::bail!("tmux new-window failed");
                 }
@@ -49,7 +50,7 @@ impl ShellMode {
                     .stdin(std::process::Stdio::inherit())
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
-                    .spawn()
+                    .run_spawn()
                 {
                     Ok(mut child) => {
                         std::thread::sleep(Duration::from_millis(50));
@@ -65,13 +66,12 @@ impl ShellMode {
                 };
 
                 match result {
-                    Ok(status) if !status.success() => {
-                        log::debug!("Shell exited with status: {status}");
+                    Ok(status) => {
+                        process::log_exit_status("shell", status);
                     }
                     Err(e) => {
                         return Err(anyhow::anyhow!("Shell failed: {e}"));
                     }
-                    _ => {}
                 }
                 Ok(())
             }

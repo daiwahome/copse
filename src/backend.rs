@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 use portable_pty::CommandBuilder;
 
 use crate::config::Backend;
+use crate::process::CommandLogExt;
 use crate::task::repo_id;
 
 pub struct SessionParams<'a> {
@@ -93,7 +94,7 @@ impl Backend {
                         tmux_args.push(arg);
                     }
 
-                    let out = tmux_command().args(&tmux_args).output()?;
+                    let out = tmux_command().args(&tmux_args).run_output()?;
                     if !out.status.success() {
                         anyhow::bail!(
                             "tmux new-session failed: {}",
@@ -159,7 +160,7 @@ impl Backend {
                     ])
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .output();
+                    .run_output();
 
                 Ok(Some(session))
             }
@@ -208,7 +209,7 @@ impl Backend {
                 ])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .output();
+                .run_output();
         }
     }
 
@@ -220,7 +221,7 @@ impl Backend {
                 .args(["kill-session", "-t", &target])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .output();
+                .run_output();
         }
     }
 
@@ -234,7 +235,7 @@ impl Backend {
                 .args(["send-keys", "-t", &target, "-X", "cancel"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .output();
+                .run_output();
         }
     }
 
@@ -290,7 +291,7 @@ pub fn is_tmux_available() -> bool {
             .arg("-V")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
+            .run_status()
             .is_ok_and(|s| s.success())
     })
 }
@@ -305,11 +306,13 @@ fn tmux_session_name(repo_root: &Path, task_name: &str) -> String {
 
 fn tmux_session_exists(session_name: &str) -> bool {
     let target = format!("={session_name}");
+    // `run_status_quiet`: non-zero exit is the normal "session does not
+    // exist" answer, not an error worth warning about.
     tmux_command()
         .args(["has-session", "-t", &target])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .run_status_quiet()
         .is_ok_and(|s| s.success())
 }
 

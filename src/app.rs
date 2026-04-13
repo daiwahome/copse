@@ -7,6 +7,7 @@ use crate::{
     diff::{DiffState, SavedDiffState},
     event::{AppEvent, TaskId},
     keybind::{self, AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
+    process::CommandLogExt,
     task::{SpawnParams, Task},
     theme::Theme,
 };
@@ -276,6 +277,7 @@ impl App {
             },
             AppEvent::TaskExited(id) => {
                 if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+                    task.reap_after_exit();
                     task.commits_ahead = task
                         .upstream
                         .as_ref()
@@ -1709,7 +1711,7 @@ impl App {
         let output = std::process::Command::new("git")
             .args(["rev-parse", "--abbrev-ref", "HEAD"])
             .current_dir(&self.repo_root)
-            .output()
+            .run_output()
             .ok()?;
         if output.status.success() {
             let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();

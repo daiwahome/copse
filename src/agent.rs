@@ -45,6 +45,19 @@ impl Agent {
         }
     }
 
+    /// Returns an icon for UI display in the task list.
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "✽",
+            Agent::Codex => "⬢",
+        }
+    }
+
+    /// All agent variants, in display order.
+    pub fn all() -> &'static [Agent] {
+        &[Agent::ClaudeCode, Agent::Codex]
+    }
+
     /// Build CLI arguments for launching the agent.
     pub fn command_args(&self, has_session: bool, config: &Config) -> Vec<String> {
         match self {
@@ -986,5 +999,20 @@ mod tests {
     fn working_text_not_on_code_output() {
         let screen = make_screen(10, 60, &["println!(\"Working (hard)\");"]);
         assert!(!has_working_text(&screen));
+    }
+
+    // -- Agent icon / enumeration tests --
+
+    #[test]
+    fn agent_icons_are_distinct_per_variant() {
+        assert_ne!(Agent::ClaudeCode.icon(), Agent::Codex.icon());
+    }
+
+    #[test]
+    fn agent_all_contains_every_variant() {
+        let all = Agent::all();
+        assert!(all.contains(&Agent::ClaudeCode));
+        assert!(all.contains(&Agent::Codex));
+        assert_eq!(all.len(), 2);
     }
 }

@@ -9,21 +9,22 @@ The default view. Shows all tasks with their status, upstream branch, and commit
 ### Display
 
 ```
-  Name     Upstream    Status    Commits
-▶ task-a   feature-x   running   3 ahead
-⏸ task-b   develop     waiting   synced
-■ task-c   feature-y   stopped   1 ahead
+  Name     Upstream    Status    Agents  Commits
+▶ task-a   feature-x   running   ✽       3 ahead
+⏸ task-b   develop     waiting   ⬢       synced
+■ task-c   feature-y   stopped   ✽ ⬢     1 ahead
 ```
 
 Each task shows:
 
-| Element                | Description                                                                               |
-| ---------------------- | ----------------------------------------------------------------------------------------- |
-| Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped                                             |
-| Name                   | Task name (also used as branch suffix: `copse/<name>`)                                    |
-| Upstream               | The branch the task was forked from (turns red when the upstream branch no longer exists) |
-| Status text            | `running` / `waiting` / `stopped`                                                         |
-| Commits ahead          | Number of commits ahead of upstream, or `synced`                                          |
+| Element                | Description                                                                                                                                                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Icon (`▶` / `⏸` / `■`) | Running (active) / Waiting (prompt) / Stopped                                                                                                                                                                                                                     |
+| Name                   | Task name (also used as branch suffix: `copse/<name>`)                                                                                                                                                                                                            |
+| Upstream               | The branch the task was forked from (turns red when the upstream branch no longer exists)                                                                                                                                                                         |
+| Status text            | `running` / `waiting` / `stopped`                                                                                                                                                                                                                                 |
+| Agents                 | Agents associated with the task (`✽` ClaudeCode / `⬢` Codex). Shows the currently configured agent plus any agent that has a leftover session marker (multiple icons appear as `✽ ⬢`). The active agent is shown in its brand color while running; grey otherwise |
+| Commits ahead          | Number of commits ahead of upstream, or `synced`                                                                                                                                                                                                                  |
 
 ### Key Bindings
 

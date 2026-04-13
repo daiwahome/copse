@@ -9,21 +9,22 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 ### 表示
 
 ```
-  Name     Upstream    Status    Commits
-▶ task-a   feature-x   running   3 ahead
-⏸ task-b   develop     waiting   synced
-■ task-c   feature-y   stopped   1 ahead
+  Name     Upstream    Status    Agents  Commits
+▶ task-a   feature-x   running   ✽       3 ahead
+⏸ task-b   develop     waiting   ⬢       synced
+■ task-c   feature-y   stopped   ✽ ⬢     1 ahead
 ```
 
 各タスクの表示要素:
 
-| 要素                       | 説明                                                         |
-| -------------------------- | ------------------------------------------------------------ |
-| アイコン (`▶` / `⏸` / `■`) | 実行中 (処理中) / 待機中 (プロンプト) / 停止                 |
-| 名前                       | タスク名 (ブランチ名のサフィックス: `copse/<name>`)          |
-| Upstream                   | タスクの分岐元ブランチ (upstream が存在しない場合は赤く表示) |
-| ステータス                 | `running` / `waiting` / `stopped`                            |
-| Commits ahead              | upstream からの差分コミット数、または `synced`               |
+| 要素                       | 説明                                                                                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| アイコン (`▶` / `⏸` / `■`) | 実行中 (処理中) / 待機中 (プロンプト) / 停止                                                                                                                                                                                                |
+| 名前                       | タスク名 (ブランチ名のサフィックス: `copse/<name>`)                                                                                                                                                                                         |
+| Upstream                   | タスクの分岐元ブランチ (upstream が存在しない場合は赤く表示)                                                                                                                                                                                |
+| ステータス                 | `running` / `waiting` / `stopped`                                                                                                                                                                                                           |
+| Agents                     | タスクに関連する agent (`✽` ClaudeCode / `⬢` Codex)。現在設定されている agent に加え、過去のセッションマーカーが残っている agent もアイコン表示される (`✽ ⬢` のように複数並ぶ)。実行中はアクティブ agent がブランドカラー、それ以外はグレー |
+| Commits ahead              | upstream からの差分コミット数、または `synced`                                                                                                                                                                                              |
 
 ### キーバインド
 

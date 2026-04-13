@@ -408,3 +408,22 @@ copse writes `.codex/hooks.json` and/or `.codex/config.toml` into each worktree 
 1. **Repository hooks** — `.codex/hooks.json` at the repository root (if it exists)
 2. **Stop hook** — added when `auto_commit` is enabled (requires `codex_hooks` feature flag)
 3. **Notify setting** — added when `notification_command` is set
+
+### Auto-commit context hint
+
+When `auto_commit` is enabled, copse also tells the agent what is about to happen so it can plan its own commits without fighting the Stop hook. The same short note is delivered to each agent through its native system-prompt / instructions channel:
+
+- **Claude Code** — launched with `--append-system-prompt "<hint>"`, so the note is layered on top of Claude's default system prompt for the session.
+- **Codex CLI** — copse writes the note to `.codex/copse-instructions.md` inside the worktree and sets `model_instructions_file = "copse-instructions.md"` in `.codex/config.toml` (Codex resolves a relative value against the config.toml directory, so no `.codex/` prefix is needed). If your own `.codex/config.toml` already sets `model_instructions_file`, copse will respect it and skip writing the hint file.
+
+The hint is a brief reminder that a Stop hook will auto-commit leftover changes as `copse auto-commit`, so the agent does not need to run `git commit` itself but can still create its own meaningful commits beforehand.
+
+### Local ignore for generated files
+
+Whenever copse writes one of the files above (`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`, `.codex/copse-instructions.md`), it also registers that path in the repository's `info/exclude`. This is git's local-only ignore list — it is never committed and does not appear in `git status` or `git diff`. As a result:
+
+- The `auto_commit` Stop hook (which runs `git add -A`) never sweeps these generated files into a commit.
+- Your repository's tracked `.gitignore` is untouched; copse does not require consumers to add rules on their behalf.
+- `info/exclude` lives in the common gitdir (`$GIT_COMMON_DIR/info/exclude`), which is shared across every linked worktree of the same repository. A single write therefore covers all worktrees — handy for copse-managed repos, but worth knowing if you intend to commit one of these paths manually from another worktree.
+
+> **Note:** `info/exclude` has no effect on files that are already tracked. If your repository previously committed one of these paths (e.g. a stray `.codex/config.toml`), untrack it with `git rm --cached <path>` before relying on this mechanism.

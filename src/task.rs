@@ -111,6 +111,13 @@ impl Task {
         worktree_base_dir.join(format!("{name}.{agent}.has-session"))
     }
 
+    /// Whether a continuable session marker exists for the given task + agent.
+    /// Used when switching agents for a task to consult the target agent's marker
+    /// instead of the value cached on the Task (which reflects the previous agent).
+    pub fn has_session_for(worktree_base_dir: &Path, name: &str, agent: &Agent) -> bool {
+        Self::session_marker_path_for(worktree_base_dir, name, agent).exists()
+    }
+
     fn session_marker_path(&self) -> PathBuf {
         let base = self.worktree_path.parent().unwrap_or(&self.worktree_path);
         Self::session_marker_path_for(base, &self.name, &self.agent)

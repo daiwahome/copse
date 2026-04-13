@@ -13,6 +13,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, ChildView, Dialog, Pane, View, ViewLayout};
+use crate::config::Agent;
 use crate::diff::DiffState;
 use crate::keybind::{AgentAction, DiffAction, GlobalAction, TasksAction};
 
@@ -315,6 +316,11 @@ fn render_dialog_overlay(frame: &mut Frame, area: Rect, app: &App) {
         Some(Dialog::ChangeUpstream { branches, selected }) => {
             render_change_upstream_dialog(frame, area, app, branches, *selected);
         }
+        Some(Dialog::SelectAgent {
+            agents, selected, ..
+        }) => {
+            render_select_agent_dialog(frame, area, agents, *selected);
+        }
         Some(Dialog::ConfirmSendReview { .. })
         | Some(Dialog::DiffSearch { .. })
         | Some(Dialog::Help { .. })
@@ -400,6 +406,9 @@ fn render_tasks_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         Some(Dialog::ConfirmMerge) => &[("f", "ff"), ("s", "squash"), ("Esc", "cancel")],
         Some(Dialog::ChangeUpstream { .. }) => {
             &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]
+        }
+        Some(Dialog::SelectAgent { .. }) => {
+            &[("j/k", "select"), ("Enter", "launch"), ("Esc", "cancel")]
         }
         _ => &default_hints,
     };
@@ -600,6 +609,36 @@ fn render_new_task_upstream_dialog(
         } else {
             lines.push(Line::from(Span::styled(
                 format!("  {branch}"),
+                Style::default().fg(Color::Indexed(252)),
+            )));
+        }
+    }
+
+    let text = Paragraph::new(lines);
+    frame.render_widget(text, inner);
+}
+
+fn render_select_agent_dialog(frame: &mut Frame, area: Rect, agents: &[Agent], selected: usize) {
+    let rows = agents.len() as u16;
+    let Some(inner) =
+        create_centered_dialog(frame, area, " Select Agent ", 40, 3 + rows, Color::Yellow)
+    else {
+        return;
+    };
+
+    let mut lines = vec![Line::from("Choose agent to launch:")];
+    for (i, agent) in agents.iter().enumerate() {
+        let label = agent.to_string();
+        if i == selected {
+            lines.push(Line::from(Span::styled(
+                format!("> {label}"),
+                Style::default()
+                    .fg(Color::Indexed(166))
+                    .add_modifier(Modifier::BOLD),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!("  {label}"),
                 Style::default().fg(Color::Indexed(252)),
             )));
         }

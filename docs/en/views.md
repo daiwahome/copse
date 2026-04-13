@@ -27,23 +27,24 @@ Each task shows:
 
 ### Key Bindings
 
-| Key           | Action                                          |
-| ------------- | ----------------------------------------------- |
-| `j` / `↓`     | Select next task                                |
-| `k` / `↑`     | Select previous task                            |
-| `Enter` / `d` | Open diff view (when commits ahead > 0)         |
-| `a`           | Open agent view (running) / Start (stopped)     |
-| `Ctrl-a`      | Start without `--continue` (stopped only)       |
-| `n`           | New task (name → upstream selection)            |
-| `Ctrl-k`      | Kill selected task (running only)               |
-| `M`           | Merge into upstream (ff / squash, stopped only) |
-| `S`           | Sync from upstream (reset, stopped only)        |
-| `U`           | Change upstream branch (stopped only)           |
-| `!`           | Delete task (worktree + branch, stopped only)   |
-| `s`           | Open shell in worktree directory                |
-| `R`           | Refresh commits ahead                           |
-| `Ctrl-g`      | Show help dialog                                |
-| `q` / `Q`     | Quit copse                                      |
+| Key           | Action                                           |
+| ------------- | ------------------------------------------------ |
+| `j` / `↓`     | Select next task                                 |
+| `k` / `↑`     | Select previous task                             |
+| `Enter` / `d` | Open diff view (when commits ahead > 0)          |
+| `a`           | Open agent view (running) / Start (stopped)      |
+| `A`           | Start with agent selection dialog (stopped only) |
+| `Ctrl-a`      | Start without `--continue` (stopped only)        |
+| `n`           | New task (name → upstream selection)             |
+| `Ctrl-k`      | Kill selected task (running only)                |
+| `M`           | Merge into upstream (ff / squash, stopped only)  |
+| `S`           | Sync from upstream (reset, stopped only)         |
+| `U`           | Change upstream branch (stopped only)            |
+| `!`           | Delete task (worktree + branch, stopped only)    |
+| `s`           | Open shell in worktree directory                 |
+| `R`           | Refresh commits ahead                            |
+| `Ctrl-g`      | Show help dialog                                 |
+| `q` / `Q`     | Quit copse                                       |
 
 ### Task Creation Flow
 

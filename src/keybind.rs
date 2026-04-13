@@ -13,6 +13,7 @@ pub enum TasksAction {
     MoveDown,
     MoveUp,
     OpenTask,
+    OpenTaskSelectAgent,
     ShowDiff,
     Merge,
     Sync,
@@ -299,6 +300,7 @@ fn tasks_action_defs() -> &'static [ActionDef<TasksAction>] {
         "move-down", "Move down" => TasksAction::MoveDown, ["j", "Down"];
         "move-up", "Move up" => TasksAction::MoveUp, ["k", "Up"];
         "open", "Open agent view" => TasksAction::OpenTask, ["a"];
+        "open-select-agent", "Open agent view (select agent)" => TasksAction::OpenTaskSelectAgent, ["A"];
         "show-diff", "Open diff view" => TasksAction::ShowDiff, ["d", "Enter"];
         "merge", "Merge to upstream" => TasksAction::Merge, ["M"];
         "sync", "Sync from upstream" => TasksAction::Sync, ["S"];

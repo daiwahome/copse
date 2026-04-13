@@ -60,7 +60,9 @@ copse creates a branch `copse/<name>` and a worktree, forked from the selected u
 
 ### 4. Start the agent
 
-Press `a` on the task to start the agent. The Agent view opens and the agent begins working in the task's worktree.
+Press `a` on the task to start the agent using the default agent from your config. The Agent view opens and the agent begins working in the task's worktree.
+
+To choose a different agent just for this launch, press `A` (Shift+A) instead — a dialog appears where you can pick `claudecode` or `codex`. The `agent` value in your config stays as the default.
 
 ### 5. Review changes
 

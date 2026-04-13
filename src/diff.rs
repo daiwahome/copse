@@ -4,6 +4,7 @@ use ansi_to_tui::IntoText;
 use ratatui::text::Line;
 
 use crate::config::DiffFilter;
+use crate::process::CommandLogExt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DiffLineKind {
@@ -679,7 +680,7 @@ pub fn get_diff(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<
     let output = std::process::Command::new("git")
         .args(["diff", &format!("{upstream}..{branch}")])
         .current_dir(repo_root)
-        .output()?;
+        .run_output()?;
     if !output.status.success() {
         anyhow::bail!(
             "git diff failed: {}",

@@ -3,6 +3,7 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
 use crate::config::DiffFilter;
+use crate::process::{self, CommandLogExt};
 
 impl DiffFilter {
     /// Check that the diff filter's external dependency is available.
@@ -41,7 +42,7 @@ fn is_delta_available() -> bool {
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
+            .run_status()
             .is_ok_and(|s| s.success())
     })
 }
@@ -61,7 +62,7 @@ fn colorize_with_delta(raw_diff: &str) -> Option<String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn()
+        .run_spawn()
         .ok()?;
 
     let mut stdin = child.stdin.take().unwrap();
@@ -74,6 +75,7 @@ fn colorize_with_delta(raw_diff: &str) -> Option<String> {
     });
 
     let output = output.ok()?;
+    process::log_exit_status("delta", output.status);
     if output.status.success() {
         Some(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {

@@ -3,6 +3,7 @@ use std::process::Stdio;
 use std::sync::OnceLock;
 
 use crate::config::{Agent, Config};
+use crate::process::CommandLogExt;
 
 impl Agent {
     /// Check that the agent's external dependency is available.
@@ -138,7 +139,7 @@ fn is_claude_available() -> bool {
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
+            .run_status()
             .is_ok_and(|s| s.success())
     })
 }
@@ -150,7 +151,7 @@ fn is_codex_available() -> bool {
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
+            .run_status()
             .is_ok_and(|s| s.success())
     })
 }

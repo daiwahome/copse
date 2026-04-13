@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    config::Config,
+    config::{Agent, Config},
     diff::{DiffState, SavedDiffState},
     event::{AppEvent, TaskId},
     keybind::{self, AgentAction, DiffAction, GlobalAction, KeyBindings, TasksAction},
@@ -65,6 +65,11 @@ pub enum Dialog {
     ConfirmMerge,
     ChangeUpstream {
         branches: Vec<String>,
+        selected: usize,
+    },
+    SelectAgent {
+        task_id: TaskId,
+        agents: Vec<Agent>,
         selected: usize,
     },
     DiffSearch {
@@ -460,6 +465,11 @@ impl App {
             Dialog::ChangeUpstream { branches, selected } => {
                 self.handle_change_upstream_dialog(key, branches, selected)
             }
+            Dialog::SelectAgent {
+                task_id,
+                agents,
+                selected,
+            } => self.handle_select_agent_dialog(key, task_id, agents, selected),
             Dialog::Help { .. } => {
                 // Any key closes the help dialog
                 Ok(())
@@ -565,6 +575,56 @@ impl App {
                 self.dialog = Some(Dialog::NewTaskUpstream {
                     name,
                     branches,
+                    selected,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_select_agent_dialog(
+        &mut self,
+        key: KeyEvent,
+        task_id: TaskId,
+        agents: Vec<Agent>,
+        mut selected: usize,
+    ) -> anyhow::Result<()> {
+        match key.code {
+            KeyCode::Esc => {}
+            KeyCode::Char('j') | KeyCode::Down => {
+                if !agents.is_empty() {
+                    selected = (selected + 1) % agents.len();
+                }
+                self.dialog = Some(Dialog::SelectAgent {
+                    task_id,
+                    agents,
+                    selected,
+                });
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if !agents.is_empty() {
+                    selected = selected.checked_sub(1).unwrap_or(agents.len() - 1);
+                }
+                self.dialog = Some(Dialog::SelectAgent {
+                    task_id,
+                    agents,
+                    selected,
+                });
+            }
+            KeyCode::Enter => {
+                let Some(agent) = agents.get(selected).cloned() else {
+                    return Ok(());
+                };
+                let Some(index) = self.tasks.iter().position(|t| t.id == task_id) else {
+                    self.last_error = Some("Task no longer exists".to_string());
+                    return Ok(());
+                };
+                self.resume_task_with_agent(index, agent);
+            }
+            _ => {
+                self.dialog = Some(Dialog::SelectAgent {
+                    task_id,
+                    agents,
                     selected,
                 });
             }
@@ -912,6 +972,31 @@ impl App {
                         }
                         crate::task::TaskStatus::Stopped => {
                             self.resume_task(self.selected_index, false);
+                        }
+                        crate::task::TaskStatus::Deleting => {}
+                    }
+                }
+            }
+            TasksAction::OpenTaskSelectAgent => {
+                if let Some(task) = self.tasks.get(self.selected_index) {
+                    match task.status {
+                        crate::task::TaskStatus::Stopped => {
+                            let agents = Agent::ALL.to_vec();
+                            let selected = agents
+                                .iter()
+                                .position(|a| a == &self.config.agent)
+                                .unwrap_or(0);
+                            self.dialog = Some(Dialog::SelectAgent {
+                                task_id: task.id,
+                                agents,
+                                selected,
+                            });
+                        }
+                        crate::task::TaskStatus::Running => {
+                            self.last_error = Some(
+                                "Task is already running — kill it first to choose a different agent"
+                                    .to_string(),
+                            );
                         }
                         crate::task::TaskStatus::Deleting => {}
                     }
@@ -1403,17 +1488,44 @@ impl App {
     }
 
     fn resume_task(&mut self, index: usize, force_fresh: bool) {
+        self.resume_task_inner(index, force_fresh, None);
+    }
+
+    fn resume_task_with_agent(&mut self, index: usize, agent: Agent) {
+        self.resume_task_inner(index, false, Some(agent));
+    }
+
+    fn resume_task_inner(
+        &mut self,
+        index: usize,
+        force_fresh: bool,
+        agent_override: Option<Agent>,
+    ) {
         let Some(task) = self.tasks.get(index) else {
             return;
+        };
+        let mut config = self.config.clone();
+        if let Some(agent) = agent_override {
+            config.agent = agent;
+        }
+        // When switching to a different agent, re-check the session marker for
+        // that agent (it's per-<name>.<agent>) rather than trusting the value
+        // stored on the task (which reflects the previous agent).
+        let has_session = if force_fresh {
+            false
+        } else if config.agent != task.agent {
+            Task::has_session_for(&self.worktree_base_dir, &task.name, &config.agent)
+        } else {
+            task.has_session
         };
         let params = SpawnParams {
             id: task.id,
             name: task.name.clone(),
             upstream: task.upstream.clone(),
-            has_session: if force_fresh { false } else { task.has_session },
+            has_session,
             repo_root: self.repo_root.clone(),
             worktree_base_dir: self.worktree_base_dir.clone(),
-            config: self.config.clone(),
+            config,
         };
         let id = task.id;
         let (cols, rows) = crossterm::terminal::size().unwrap_or((200, 50));

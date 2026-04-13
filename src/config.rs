@@ -13,6 +13,11 @@ pub enum Agent {
     Codex,
 }
 
+impl Agent {
+    /// All known agents, in the order they should be presented in UI pickers.
+    pub const ALL: &'static [Agent] = &[Agent::ClaudeCode, Agent::Codex];
+}
+
 impl std::fmt::Display for Agent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

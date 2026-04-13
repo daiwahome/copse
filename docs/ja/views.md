@@ -33,6 +33,7 @@ copse は [tig](https://github.com/jonas/tig) の split-pane レイアウトに�
 | `k` / `↑`     | 前のタスクを選択                             |
 | `Enter` / `d` | Diff view を開く (commits ahead > 0 の場合)  |
 | `a`           | Agent view を開く (実行中) / 起動 (停止中)   |
+| `A`           | Agent を選択して起動 (停止中のみ)            |
 | `Ctrl-a`      | `--continue` なしで起動 (停止中のみ)         |
 | `n`           | 新しいタスク (名前 → upstream 選択)          |
 | `Ctrl-k`      | タスクを停止 (実行中のみ)                    |

@@ -91,16 +91,15 @@ impl Tui {
                     }
                     match event::read() {
                         Ok(Event::Key(key))
-                            if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
+                            if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                                && tx.blocking_send(AppEvent::Key(key)).is_err() =>
                         {
-                            if tx.blocking_send(AppEvent::Key(key)).is_err() {
-                                break;
-                            }
+                            break;
                         }
-                        Ok(Event::Resize(cols, rows)) => {
-                            if tx.blocking_send(AppEvent::Resize { cols, rows }).is_err() {
-                                break;
-                            }
+                        Ok(Event::Resize(cols, rows))
+                            if tx.blocking_send(AppEvent::Resize { cols, rows }).is_err() =>
+                        {
+                            break;
                         }
                         _ => {}
                     }

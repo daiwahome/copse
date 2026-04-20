@@ -62,7 +62,7 @@ copse が選択した upstream から分岐した `copse/<name>` ブランチと
 
 タスク上で `a` を押して設定ファイルのデフォルト agent でエージェントを開始する。Agent view が開き、エージェントがタスクの worktree で作業を始める。
 
-この起動だけ別の agent を使いたい場合は、`A` (Shift+A) を押すと選択ダイアログが開き、`claudecode` / `codex` をその場で選べる。設定ファイルの `agent` はデフォルトとしてそのまま使われる。
+この起動だけ別の agent を使いたい場合は、`A` (Shift+A) を押すと選択ダイアログが開き、`claudecode` / `codex` / `copilotcli` をその場で選べる。設定ファイルの `agent` はデフォルトとしてそのまま使われる。
 
 ### 5. 変更を確認
 

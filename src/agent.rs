@@ -10,6 +10,9 @@ use crate::process::CommandLogExt;
 /// auto-committed after every response and can plan its own commits
 /// accordingly. Kept terse on purpose: 2-4 sentences, ASCII-only so it
 /// survives CLI argument passing under any locale.
+///
+/// Used for Claude Code (`Stop` hook) and Codex (`Stop` hook) — both fire
+/// once per agent response.
 const AUTO_COMMIT_HINT: &str = "\
 copse auto-commit is active for this session. A Stop hook runs \
 `git add -A && git diff --cached --quiet || git commit -m \"copse auto-commit\"` \
@@ -17,6 +20,20 @@ after every agent response. You do not need to run `git commit` yourself; \
 any uncommitted changes at the end of your turn are packaged into a \
 'copse auto-commit' commit automatically. You may still make your own \
 commits with meaningful messages - auto-commit only fires if leftover \
+changes remain after yours.";
+
+/// Auto-commit hint tailored for Copilot CLI. Copilot CLI has no `Stop`
+/// equivalent, so copse installs a `postToolUse` hook that fires after
+/// **each tool invocation** — meaning a single agent turn can produce
+/// several `copse auto-commit` commits. Telling the agent the true firing
+/// cadence keeps its commit planning aligned with what will actually happen.
+const AUTO_COMMIT_HINT_COPILOT: &str = "\
+copse auto-commit is active for this session. A postToolUse hook runs \
+`git add -A && git diff --cached --quiet || git commit -m \"copse auto-commit\"` \
+after every tool invocation, so a single turn can produce multiple \
+'copse auto-commit' commits. You do not need to run `git commit` yourself; \
+uncommitted changes are packaged automatically. You may still make your \
+own commits with meaningful messages - auto-commit only fires if leftover \
 changes remain after yours.";
 
 impl Agent {
@@ -41,6 +58,15 @@ impl Agent {
                     )
                 }
             }
+            Agent::CopilotCli => {
+                if is_copilot_cli_available() {
+                    Ok(())
+                } else {
+                    anyhow::bail!(
+                        "agent = \"copilotcli\" is configured but copilot is not installed or not in PATH"
+                    )
+                }
+            }
         }
     }
 
@@ -49,6 +75,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => "claude",
             Agent::Codex => "codex",
+            Agent::CopilotCli => "copilot",
         }
     }
 
@@ -57,6 +84,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => "claude",
             Agent::Codex => "codex",
+            Agent::CopilotCli => "copilot",
         }
     }
 
@@ -65,12 +93,13 @@ impl Agent {
         match self {
             Agent::ClaudeCode => "✽",
             Agent::Codex => "⬢",
+            Agent::CopilotCli => "⛑",
         }
     }
 
     /// All agent variants, in display order.
     pub fn all() -> &'static [Agent] {
-        &[Agent::ClaudeCode, Agent::Codex]
+        &[Agent::ClaudeCode, Agent::Codex, Agent::CopilotCli]
     }
 
     /// Build CLI arguments for launching the agent.
@@ -111,6 +140,21 @@ impl Agent {
                 }
                 args
             }
+            Agent::CopilotCli => {
+                let mut args = Vec::new();
+                if has_session {
+                    args.push("--continue".to_string());
+                }
+                if let Some(ref mode) = config.copilot_cli.mode {
+                    args.push("--mode".to_string());
+                    args.push(mode.clone());
+                }
+                if config.auto_permissions {
+                    args.push("--allow-all-tools".to_string());
+                    args.push("--allow-all-paths".to_string());
+                }
+                args
+            }
         }
     }
 
@@ -135,6 +179,12 @@ impl Agent {
                 config.auto_commit,
                 config.notification_command.as_deref(),
             ),
+            Agent::CopilotCli => setup_copilot_cli_worktree(
+                worktree_path,
+                repo_root,
+                config.auto_commit,
+                config.notification_command.as_deref(),
+            ),
         }
     }
 
@@ -144,6 +194,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => has_active_spinner(screen),
             Agent::Codex => has_working_text(screen),
+            Agent::CopilotCli => has_copilot_processing_indicator(screen),
         }
     }
 }
@@ -166,6 +217,18 @@ fn is_codex_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
         std::process::Command::new("codex")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .run_status()
+            .is_ok_and(|s| s.success())
+    })
+}
+
+fn is_copilot_cli_available() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        std::process::Command::new("copilot")
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -451,6 +514,93 @@ fn setup_codex_worktree(
     Ok(())
 }
 
+fn setup_copilot_cli_worktree(
+    worktree_path: &Path,
+    _repo_root: &Path,
+    auto_commit: bool,
+    _notification_command: Option<&str>,
+) -> anyhow::Result<()> {
+    // Copilot CLI loads hooks from any `.github/hooks/*.json` file. The
+    // schema is documented at:
+    //   https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks
+    //
+    // Supported events: sessionStart, sessionEnd, userPromptSubmitted,
+    // preToolUse, postToolUse, errorOccurred.
+    //
+    // We use `postToolUse` (fires after every tool invocation) for
+    // auto-commit because copse's diff view relies on committed state:
+    // uncommitted changes are invisible, so deferring commits to end-of-turn
+    // would break the in-session code review workflow. `postToolUse` keeps
+    // the diff view synchronized with the agent's progress, at the cost of
+    // finer-grained commits than Claude Code's `Stop` produces (potentially
+    // multiple commits per turn). The `git diff --cached --quiet` guard
+    // short-circuits when there is nothing to commit, so read-only tool uses
+    // do not produce empty commits.
+    //
+    // Multiple hook files in `.github/hooks/` are merged by Copilot CLI, so
+    // we write our own file without touching any existing ones.
+    //
+    // `notification_command` is not supported: there is no hook event that
+    // fires when Copilot CLI is waiting for user input.
+    if !auto_commit {
+        return Ok(());
+    }
+
+    let hooks_dir = worktree_path.join(".github").join("hooks");
+    std::fs::create_dir_all(&hooks_dir)?;
+
+    let hooks = serde_json::json!({
+        "version": 1,
+        "hooks": {
+            "postToolUse": [{
+                "type": "command",
+                "bash": "git add -A && git diff --cached --quiet || git commit -m 'copse auto-commit'",
+                "cwd": ".",
+                "timeoutSec": 30
+            }]
+        }
+    });
+
+    std::fs::write(
+        hooks_dir.join("copse-hooks.json"),
+        serde_json::to_string_pretty(&hooks)? + "\n",
+    )?;
+
+    // -- Auto-commit hint via .github/instructions/ --
+    //
+    // Copilot CLI auto-loads `.github/instructions/**/*.instructions.md` and
+    // merges them with any top-level `AGENTS.md` / `CLAUDE.md` etc.
+    // Reference:
+    //   https://docs.github.com/en/copilot/customizing-copilot/adding-repository-custom-instructions-for-github-copilot
+    //
+    // This is safer than appending to the project's `AGENTS.md`: if that
+    // file is tracked, the worktree already has the tracked copy (worktrees
+    // share tracked files with HEAD) and overwriting it would produce a
+    // modification that `info/exclude` cannot hide (exclude only applies to
+    // untracked files), which would then be auto-committed on every turn.
+    //
+    // `copse.instructions.md` is a copse-specific filename, so collisions
+    // with project-tracked files are effectively impossible. The `applyTo:
+    // "**"` frontmatter marks this as a global instruction that applies
+    // regardless of which file the agent is working on.
+    let instructions_dir = worktree_path.join(".github").join("instructions");
+    std::fs::create_dir_all(&instructions_dir)?;
+    std::fs::write(
+        instructions_dir.join("copse.instructions.md"),
+        format!("---\napplyTo: \"**\"\n---\n{AUTO_COMMIT_HINT_COPILOT}\n"),
+    )?;
+
+    ensure_git_excluded(
+        worktree_path,
+        &[
+            "/.github/hooks/copse-hooks.json",
+            "/.github/instructions/copse.instructions.md",
+        ],
+    )?;
+
+    Ok(())
+}
+
 const COPSE_MARKER: &str = "# managed by copse";
 
 /// Resolve the per-worktree `$GIT_DIR` for `worktree_path`.
@@ -644,6 +794,42 @@ fn has_working_text(screen: &vt100::Screen) -> bool {
     scan_screen_rows(screen, |_r, trimmed| {
         trimmed.contains("Working (") && trimmed.contains("esc to interrupt")
     })
+}
+
+/// Detect whether Copilot CLI is actively processing.
+///
+/// Two mutually-exclusive indicators are relevant:
+///
+/// - **Idle prompt**: a line starting with `❯` containing `"Type @"` — the
+///   agent is waiting for user input.
+/// - **Processing spinner**: a line starting with `● ◉ ◎ ○` containing
+///   `"Esc to cancel"`, e.g. `◉ Exploring codebase (Esc to cancel · 16.0 KiB)`.
+///
+/// Both can coexist in the scrollback (an old idle prompt above a fresh
+/// spinner, or a stale spinner above a new idle prompt). The current state
+/// is whichever indicator appears **lowest on the screen** (the most recent
+/// output). We scan bottom-to-top and return on the first match — neither
+/// indicator gets absolute priority over the other.
+fn has_copilot_processing_indicator(screen: &vt100::Screen) -> bool {
+    const COPILOT_SPINNERS: &[char] = &['●', '◉', '◎', '○'];
+
+    let mut is_processing = false;
+    scan_screen_rows(screen, |_r, trimmed| {
+        // Idle prompt: agent is waiting for input.
+        if trimmed.starts_with('❯') && trimmed.contains("Type @") {
+            is_processing = false;
+            return true; // stop — this is the most recent relevant row
+        }
+        // Spinner + "Esc to cancel": agent is actively processing.
+        if let Some(first) = trimmed.chars().next() {
+            if COPILOT_SPINNERS.contains(&first) && trimmed.contains("Esc to cancel") {
+                is_processing = true;
+                return true; // stop — this is the most recent relevant row
+            }
+        }
+        false
+    });
+    is_processing
 }
 
 #[cfg(test)]
@@ -1505,6 +1691,8 @@ mod tests {
     #[test]
     fn agent_icons_are_distinct_per_variant() {
         assert_ne!(Agent::ClaudeCode.icon(), Agent::Codex.icon());
+        assert_ne!(Agent::ClaudeCode.icon(), Agent::CopilotCli.icon());
+        assert_ne!(Agent::Codex.icon(), Agent::CopilotCli.icon());
     }
 
     #[test]
@@ -1512,6 +1700,252 @@ mod tests {
         let all = Agent::all();
         assert!(all.contains(&Agent::ClaudeCode));
         assert!(all.contains(&Agent::Codex));
-        assert_eq!(all.len(), 2);
+        assert!(all.contains(&Agent::CopilotCli));
+        assert_eq!(all.len(), 3);
+    }
+
+    // -- Copilot CLI command tests --
+
+    #[test]
+    fn copilotcli_command_name() {
+        assert_eq!(Agent::CopilotCli.command_name(), "copilot");
+    }
+
+    #[test]
+    fn copilotcli_display_name() {
+        assert_eq!(Agent::CopilotCli.display_name(), "copilot");
+    }
+
+    #[test]
+    fn copilotcli_command_args_fresh() {
+        let config = Config::default();
+        let args = Agent::CopilotCli.command_args(false, &config);
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn copilotcli_command_args_continue() {
+        let config = Config::default();
+        let args = Agent::CopilotCli.command_args(true, &config);
+        assert_eq!(args, vec!["--continue"]);
+    }
+
+    #[test]
+    fn copilotcli_command_args_with_mode() {
+        let mut config = Config::default();
+        config.copilot_cli.mode = Some("autopilot".to_string());
+        let args = Agent::CopilotCli.command_args(false, &config);
+        assert_eq!(args, vec!["--mode", "autopilot"]);
+    }
+
+    #[test]
+    fn copilotcli_command_args_auto_permissions() {
+        let mut config = Config::default();
+        config.auto_permissions = true;
+        let args = Agent::CopilotCli.command_args(false, &config);
+        assert_eq!(args, vec!["--allow-all-tools", "--allow-all-paths"]);
+    }
+
+    #[test]
+    fn copilotcli_command_args_continue_with_mode_and_permissions() {
+        let mut config = Config::default();
+        config.copilot_cli.mode = Some("plan".to_string());
+        config.auto_permissions = true;
+        let args = Agent::CopilotCli.command_args(true, &config);
+        assert_eq!(
+            args,
+            vec![
+                "--continue",
+                "--mode",
+                "plan",
+                "--allow-all-tools",
+                "--allow-all-paths"
+            ]
+        );
+    }
+
+    // -- Copilot CLI worktree setup tests --
+
+    #[test]
+    fn copilotcli_no_flags_no_parent_does_nothing() {
+        let f = WorktreeFixture::new();
+        setup_copilot_cli_worktree(&f.wt, &f.repo, false, None).unwrap();
+        assert!(!f.wt.join(".github/hooks/copse-hooks.json").exists());
+        assert!(!f
+            .wt
+            .join(".github/instructions/copse.instructions.md")
+            .exists());
+    }
+
+    #[test]
+    fn copilotcli_auto_commit_creates_hooks() {
+        let f = WorktreeFixture::new();
+        setup_copilot_cli_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        let hooks_content =
+            std::fs::read_to_string(f.wt.join(".github/hooks/copse-hooks.json")).unwrap();
+        let hooks: serde_json::Value = serde_json::from_str(&hooks_content).unwrap();
+        assert_eq!(hooks["version"], 1);
+        let post = hooks["hooks"]["postToolUse"].as_array().unwrap();
+        assert_eq!(post.len(), 1);
+        assert_eq!(post[0]["type"], "command");
+        assert!(post[0]["bash"]
+            .as_str()
+            .unwrap()
+            .contains("copse auto-commit"));
+    }
+
+    #[test]
+    fn copilotcli_auto_commit_writes_instructions_file() {
+        let f = WorktreeFixture::new();
+        setup_copilot_cli_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        let content =
+            std::fs::read_to_string(f.wt.join(".github/instructions/copse.instructions.md"))
+                .unwrap();
+        // Frontmatter: must start with `---`, declare `applyTo: "**"`, and
+        // close with `---`. The auto-commit hint body follows.
+        assert!(
+            content.starts_with("---\n"),
+            "instructions file must begin with frontmatter delimiter"
+        );
+        assert!(
+            content.contains("applyTo: \"**\""),
+            "frontmatter must declare applyTo: \"**\" so the instruction applies globally"
+        );
+        let (frontmatter, body) = content
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .expect("frontmatter must be closed with a `---` line");
+        assert!(frontmatter.contains("applyTo: \"**\""));
+        // Body must describe the actual Copilot CLI hook event (postToolUse,
+        // per-tool) rather than the Claude/Codex Stop-hook wording, so the
+        // agent's commit planning matches reality.
+        assert!(body.contains(AUTO_COMMIT_HINT_COPILOT));
+        assert!(body.contains("postToolUse"));
+        assert!(!body.contains("Stop hook"));
+    }
+
+    #[test]
+    fn copilotcli_auto_commit_does_not_touch_parent_agents_md() {
+        // Regression test: the earlier implementation overwrote a tracked
+        // AGENTS.md with `parent_content + hint`, which `info/exclude` cannot
+        // hide (exclude only applies to untracked files). The auto-commit
+        // hook would then commit that modification on every turn.
+        let f = WorktreeFixture::new();
+        std::fs::write(f.repo.join("AGENTS.md"), "# Project instructions\n").unwrap();
+
+        setup_copilot_cli_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        // The worktree's AGENTS.md must not be created by copse.
+        assert!(!f.wt.join("AGENTS.md").exists());
+        // The parent's AGENTS.md must be left untouched.
+        let parent = std::fs::read_to_string(f.repo.join("AGENTS.md")).unwrap();
+        assert_eq!(parent, "# Project instructions\n");
+    }
+
+    #[test]
+    fn copilotcli_notification_only_does_nothing() {
+        // notification_command is not supported for Copilot CLI.
+        let f = WorktreeFixture::new();
+        setup_copilot_cli_worktree(&f.wt, &f.repo, false, Some("echo notify")).unwrap();
+        assert!(!f.wt.join(".github/hooks/copse-hooks.json").exists());
+    }
+
+    #[test]
+    fn copilotcli_does_not_touch_parent_hook_files() {
+        // Copilot CLI merges multiple hook files from .github/hooks/, so we
+        // only write our own file and leave others alone.
+        let f = WorktreeFixture::new();
+        let parent_hooks_dir = f.repo.join(".github/hooks");
+        std::fs::create_dir_all(&parent_hooks_dir).unwrap();
+        std::fs::write(parent_hooks_dir.join("project.json"), "{}").unwrap();
+
+        setup_copilot_cli_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        assert!(f.wt.join(".github/hooks/copse-hooks.json").exists());
+        assert!(!f.wt.join(".github/hooks/project.json").exists());
+    }
+
+    #[test]
+    fn copilotcli_setup_writes_info_exclude() {
+        let f = WorktreeFixture::new();
+        setup_copilot_cli_worktree(&f.wt, &f.repo, true, None).unwrap();
+
+        let exclude = f.read_info_exclude();
+        assert!(exclude.contains("/.github/hooks/copse-hooks.json"));
+        assert!(exclude.contains("/.github/instructions/copse.instructions.md"));
+    }
+
+    #[test]
+    fn copilotcli_setup_skips_info_exclude_when_nothing_written() {
+        let f = WorktreeFixture::new();
+        setup_copilot_cli_worktree(&f.wt, &f.repo, false, None).unwrap();
+        assert!(f.read_info_exclude().is_empty());
+    }
+
+    // -- Copilot CLI processing detection tests --
+
+    #[test]
+    fn copilotcli_processing_idle_prompt_returns_false() {
+        let screen = make_screen(10, 80, &["❯ Type @ to mention files"]);
+        assert!(!has_copilot_processing_indicator(&screen));
+    }
+
+    #[test]
+    fn copilotcli_processing_spinner_returns_true() {
+        let screen = make_screen(10, 80, &["◉ Exploring codebase (Esc to cancel · 16.0 KiB)"]);
+        assert!(has_copilot_processing_indicator(&screen));
+    }
+
+    #[test]
+    fn copilotcli_processing_newest_idle_prompt_below_spinner_wins() {
+        // Stale spinner above a fresh idle prompt: decision is based on the
+        // bottommost (most recent) indicator, so the agent is idle.
+        let screen = make_screen(
+            10,
+            80,
+            &[
+                "◉ Exploring codebase (Esc to cancel · 16.0 KiB)\r\n",
+                "❯ Type @ to mention files",
+            ],
+        );
+        assert!(!has_copilot_processing_indicator(&screen));
+    }
+
+    #[test]
+    fn copilotcli_processing_newest_spinner_below_idle_prompt_wins() {
+        // Stale idle prompt above a fresh spinner: the spinner is the most
+        // recent indicator, so the agent is processing. Regression test for
+        // the bug where the idle prompt was given absolute priority.
+        let screen = make_screen(
+            10,
+            80,
+            &[
+                "❯ Type @ to mention files\r\n",
+                "◉ Exploring codebase (Esc to cancel · 16.0 KiB)",
+            ],
+        );
+        assert!(has_copilot_processing_indicator(&screen));
+    }
+
+    #[test]
+    fn copilotcli_processing_spinner_without_esc_cancel_returns_false() {
+        // Static lines that start with a spinner character but are not the
+        // active-processing indicator (no "Esc to cancel") must not match.
+        let screen = make_screen(10, 80, &["● Environment loaded: 1 MCP server, 1 skill"]);
+        assert!(!has_copilot_processing_indicator(&screen));
+    }
+
+    #[test]
+    fn copilotcli_processing_empty_screen_returns_false() {
+        let screen = make_screen(10, 80, &[]);
+        assert!(!has_copilot_processing_indicator(&screen));
+    }
+
+    #[test]
+    fn copilotcli_processing_plain_text_returns_false() {
+        let screen = make_screen(10, 80, &["some output\r\nmore output"]);
+        assert!(!has_copilot_processing_indicator(&screen));
     }
 }

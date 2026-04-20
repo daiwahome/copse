@@ -2,7 +2,7 @@
 
 AI コーディングエージェントのタスクを git worktree で並列実行する TUI ツール。
 
-[tig](https://github.com/jonas/tig) にインスパイアされた設計。エージェント CLI (Claude Code, Codex) をそのままラップし、copse はフロントエンドのみを提供する。
+[tig](https://github.com/jonas/tig) にインスパイアされた設計。エージェント CLI (Claude Code, Codex, Copilot CLI) をそのままラップし、copse はフロントエンドのみを提供する。
 
 ## コンセプト
 
@@ -30,7 +30,7 @@ upstream branch (例: feature-x)
 
 ## 必要なもの
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) または [Codex CLI](https://github.com/openai/codex) (設定の `agent` で切り替え)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex CLI](https://github.com/openai/codex)、または [Copilot CLI](https://docs.github.com/ja/copilot/concepts/agents/about-copilot-cli) (設定の `agent` で切り替え)
 - git リポジトリ内で実行する必要がある
 
 ### オプション

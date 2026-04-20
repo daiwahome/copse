@@ -34,6 +34,9 @@ auto_mode = false
 # approval = "on-request"
 search = true
 
+[copilotcli]
+# mode = "autopilot"
+
 [color]
 cursor = { bg = "236" }
 cursor-blur = { fg = "252", bg = "234" }
@@ -115,7 +118,7 @@ exit-scroll-mode = ["q", "Enter"]
 
 | オプション             | 型              | デフォルト     | 説明                                                                     |
 | ---------------------- | --------------- | -------------- | ------------------------------------------------------------------------ |
-| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"` または `"codex"`                    |
+| `agent`                | string          | `"claudecode"` | 使用するエージェント: `"claudecode"`、`"codex"`、または `"copilotcli"`   |
 | `backend`              | string          | `"builtin"`    | プロセスバックエンド: `"builtin"` または `"tmux"`                        |
 | `diff_filter`          | string          | `"none"`       | Diff の着色方法: `"none"` または `"delta"`                               |
 | `shell_mode`           | string          | `"suspend"`    | シェルの開き方: `"suspend"` または `"tmux"`                              |
@@ -143,6 +146,14 @@ Codex CLI 固有のオプション。全てオプショナル — 省略時は�
 | `sandbox`  | string (省略可) | —          | サンドボックスポリシー: `"read-only"`, `"workspace-write"`, `"danger-full-access"` |
 | `approval` | string (省略可) | —          | 承認モード: `"untrusted"`, `"on-request"`, `"never"`                               |
 | `search`   | bool            | `true`     | Web 検索を有効化 (`--search`)                                                      |
+
+### `[copilotcli]` セクション
+
+GitHub Copilot CLI 固有のオプション。全てオプショナル — 省略時はフラグを渡さず、Copilot CLI 自身の設定 (`~/.copilot/config.json`) に従う。
+
+| オプション | 型              | デフォルト | 説明                                                        |
+| ---------- | --------------- | ---------- | ----------------------------------------------------------- |
+| `mode`     | string (省略可) | —          | 起動モード: `"interactive"`, `"plan"`, または `"autopilot"` |
 
 ### Auto Mode
 
@@ -299,17 +310,33 @@ fullscreen = ["O", "Ctrl-O", "F11"]  # F11 を追加
 
 ## Auto-Commit
 
-`auto_commit` が有効な場合、copse は各 worktree に Stop hook をインストールする。エージェントの応答完了後にフックが実行され:
+`auto_commit` が有効な場合、copse は各 worktree にエージェント別のフックをインストールする。フックが実行されると:
 
 1. 全ての変更をステージング (`git add -A`)
 2. ステージされた変更がなければスキップ (`git diff --cached --quiet`)
 3. `copse auto-commit` というメッセージでコミット
 
+エージェントごとに最も近い hook イベントが使われる:
+
+| エージェント | Hook イベント | 発火頻度                                                                           |
+| ------------ | ------------- | ---------------------------------------------------------------------------------- |
+| Claude Code  | `Stop`        | エージェントの応答ごとに 1 回                                                      |
+| Codex        | `Stop`        | エージェントの応答ごとに 1 回                                                      |
+| Copilot CLI  | `postToolUse` | 各ツール呼び出しごとに 1 回 — 1ターンで複数の `copse auto-commit` が作られる可能性 |
+
+Copilot CLI には `Stop` 相当のイベントがないため、`postToolUse` を使ってターン中の diff view をエージェントの進捗に同期させている。余分なコミットはマージ確認ダイアログの `s` (squash) でまとめられる。
+
 Tasks view の commits ahead カウントは 5 秒ごとにリフレッシュされるため、新しいコミットが作成されると間もなく表示に反映される。
 
 ## Auto-Permissions
 
-`auto_permissions` が有効な場合 (Claude Code のみ)、copse は以下の安全なコマンドを事前承認し、エージェントが確認プロンプトを出さないようにする。Codex CLI では無効。
+`auto_permissions` が有効な場合、copse はエージェントが確認プロンプトを出さないよう事前承認を行う。仕組みはエージェントごとに異なる:
+
+- **Claude Code** — 以下の安全なコマンドを `.claude/settings.local.json` に許可リストとして書き込む（`Edit` / `Write` / `NotebookEdit` は worktree 内に制限）。加えて機密パスの deny ルールも付与する。
+- **Copilot CLI** — `copilot` 起動時に `--allow-all-tools --allow-all-paths` を渡す（コマンド単位の細かい許可リストはない）。
+- **Codex CLI** — 無効。代わりに `[codex]` の `sandbox` / `approval` オプションを使う。
+
+Claude Code の許可リスト:
 
 | カテゴリ       | コマンド                                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -358,6 +385,8 @@ COPSE_LOG=debug copse
 ## Notification Command
 
 設定すると、copse はエージェントが入力待ちになった時にコマンドを実行するよう構成する。Claude Code では [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks) を、Codex CLI では `notify` 設定を使用する。
+
+Copilot CLI には相当するイベント（入力待ち通知）がないため、`agent = "copilotcli"` のときは `notification_command` は**無視される**。
 
 キーを省略すると通知は無効になる。`notification_command = ""` はバリデーションエラーになる。
 
@@ -409,20 +438,30 @@ copse はタスク起動時に各 worktree に `.codex/hooks.json` と `.codex/c
 2. **Stop hook** — `auto_commit` が有効な場合に追加（`codex_hooks` feature flag が必要）
 3. **Notify 設定** — `notification_command` が設定されている場合に追加
 
+### Copilot CLI
+
+`auto_commit` が有効な場合、copse は各 worktree に以下の 2 ファイルを書き込む:
+
+1. **`.github/hooks/copse-hooks.json`** — auto-commit を実行する `postToolUse` フック
+2. **`.github/instructions/copse.instructions.md`** — auto-commit の挙動を agent に伝える hint (下記参照)、`applyTo: "**"` の YAML frontmatter 付き
+
+Copilot CLI は `.github/hooks/*.json` の全ファイルを自動でロード・マージするため、copse は自前のファイルを書き込むだけで既存ファイルには触れない。instructions ファイルは copse 固有のファイル名 (`copse.instructions.md`) を使うので、プロジェクトが tracked 管理しているファイルとの衝突は実質的にあり得ない。
+
 ### auto-commit の挙動を agent に通知
 
-`auto_commit` が有効なとき、copse は agent が Stop hook と衝突しないように挙動を事前に伝える。同じ短い説明を、各 agent のネイティブな system-prompt / instructions 経路で届ける:
+`auto_commit` が有効なとき、copse は agent が auto-commit hook と衝突しないように挙動を事前に伝える。同じ短い説明を、各 agent のネイティブな system-prompt / instructions 経路で届ける:
 
 - **Claude Code** — 起動時に `--append-system-prompt "<hint>"` を付けることで、セッションのデフォルト system prompt に追記される。
 - **Codex CLI** — copse が `.codex/copse-instructions.md` を worktree に書き出し、`.codex/config.toml` に `model_instructions_file = "copse-instructions.md"` を設定する（Codex は相対パスを config.toml のディレクトリ基準で解決するので `.codex/` プレフィックスは付けない）。利用者の `.codex/config.toml` が既に `model_instructions_file` を設定していた場合、copse はそれを尊重して hint ファイルを書かない。
+- **Copilot CLI** — copse が `.github/instructions/copse.instructions.md` を書き出し、YAML frontmatter `applyTo: "**"` を付ける。Copilot CLI は `.github/instructions/**/*.instructions.md` にマッチするファイルをトップレベルの `AGENTS.md` と並行して自動ロードするため、どのファイルを agent が扱っていても hint が適用される。プロジェクトの `AGENTS.md` は一切触られない。
 
-内容は「Stop hook が残った変更を `copse auto-commit` として自動コミットするので、agent 自身が `git commit` を打つ必要はないが、意味のあるコミットメッセージを残したければ自分でコミットしてから agent ターンを終わらせても共存できる」という簡潔なリマインダー。
+内容は「copse の auto-commit hook が残った変更を `copse auto-commit` としてコミットするので、agent 自身が `git commit` を打つ必要はないが、意味のあるコミットメッセージを残したければ自分でコミットしてから agent ターンを終わらせても共存できる」という簡潔なリマインダー。
 
 ### 生成ファイルのローカル ignore
 
-copse が上記ファイル（`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`, `.codex/copse-instructions.md`）を書き出す際、同じパスをリポジトリの `info/exclude` にも登録する。これは git のローカル専用 ignore リストで、コミット対象にならず `git status` / `git diff` にも現れない。結果として:
+copse が上記ファイル（`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`, `.codex/copse-instructions.md`, `.github/hooks/copse-hooks.json`, `.github/instructions/copse.instructions.md`）を書き出す際、同じパスをリポジトリの `info/exclude` にも登録する。これは git のローカル専用 ignore リストで、コミット対象にならず `git status` / `git diff` にも現れない。結果として:
 
-- `auto_commit` の Stop hook（`git add -A`）がこれら生成ファイルを巻き込んでコミットすることがない。
+- `auto_commit` のフック（`git add -A`）がこれら生成ファイルを巻き込んでコミットすることがない。
 - リポジトリで追跡されている `.gitignore` は一切変更されない。利用者側に ignore ルールの追加を強いることもない。
 - `info/exclude` は共有 gitdir（`$GIT_COMMON_DIR/info/exclude`）に置かれ、同一リポジトリの全 linked worktree で共有される。1 回書けば全 worktree で効くので copse 管理のリポジトリでは便利だが、別 worktree でこれらのパスを手動で commit したい場合があることは頭に入れておくこと。
 

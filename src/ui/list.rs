@@ -15,6 +15,7 @@ fn agent_icon_color(agent: &Agent) -> Color {
     match agent {
         Agent::ClaudeCode => Color::Indexed(166), // Claude orange
         Agent::Codex => Color::Indexed(36),       // teal
+        Agent::CopilotCli => Color::Indexed(75),  // Copilot blue
     }
 }
 

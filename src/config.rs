@@ -11,11 +11,12 @@ pub enum Agent {
     #[default]
     ClaudeCode,
     Codex,
+    CopilotCli,
 }
 
 impl Agent {
     /// All known agents, in the order they should be presented in UI pickers.
-    pub const ALL: &'static [Agent] = &[Agent::ClaudeCode, Agent::Codex];
+    pub const ALL: &'static [Agent] = &[Agent::ClaudeCode, Agent::Codex, Agent::CopilotCli];
 }
 
 impl std::fmt::Display for Agent {
@@ -23,6 +24,7 @@ impl std::fmt::Display for Agent {
         match self {
             Agent::ClaudeCode => write!(f, "claudecode"),
             Agent::Codex => write!(f, "codex"),
+            Agent::CopilotCli => write!(f, "copilotcli"),
         }
     }
 }
@@ -70,6 +72,12 @@ impl Default for CodexConfig {
 
 fn default_true() -> bool {
     true
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CopilotCliConfig {
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -176,6 +184,8 @@ pub struct Config {
     pub claude_code: ClaudeCodeConfig,
     #[serde(default)]
     pub codex: CodexConfig,
+    #[serde(default, rename = "copilotcli")]
+    pub copilot_cli: CopilotCliConfig,
     #[serde(default)]
     pub color: ColorConfig,
     #[serde(default)]
@@ -260,6 +270,13 @@ impl Config {
             out.push_str("# approval = \"on-request\"\n");
         }
         out.push_str(&format!("search = {}\n", self.codex.search));
+
+        out.push_str("\n[copilotcli]\n");
+        if let Some(ref mode) = self.copilot_cli.mode {
+            out.push_str(&format!("mode = \"{mode}\"\n"));
+        } else {
+            out.push_str("# mode = \"autopilot\"\n");
+        }
 
         out.push_str("\n[color]\n");
 

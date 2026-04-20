@@ -2,7 +2,7 @@
 
 A TUI for running AI coding agent tasks in parallel using git worktrees.
 
-Inspired by [tig](https://github.com/jonas/tig). Wraps agent CLIs (Claude Code, Codex) as-is — copse only provides the frontend.
+Inspired by [tig](https://github.com/jonas/tig). Wraps agent CLIs (Claude Code, Codex, Copilot CLI) as-is — copse only provides the frontend.
 
 ## Concepts
 
@@ -30,7 +30,7 @@ upstream branch (e.g. feature-x)
 
 ## Requirements
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex CLI](https://github.com/openai/codex) (configure with `agent` in config)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), or [Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) (configure with `agent` in config)
 - A git repository (copse must be run from within one)
 
 ### Optional

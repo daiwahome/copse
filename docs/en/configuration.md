@@ -34,6 +34,9 @@ auto_mode = false
 # approval = "on-request"
 search = true
 
+[copilotcli]
+# mode = "autopilot"
+
 [color]
 cursor = { bg = "236" }
 cursor-blur = { fg = "252", bg = "234" }
@@ -115,7 +118,7 @@ exit-scroll-mode = ["q", "Enter"]
 
 | Option                 | Type            | Default        | Description                                                             |
 | ---------------------- | --------------- | -------------- | ----------------------------------------------------------------------- |
-| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"` or `"codex"`                               |
+| `agent`                | string          | `"claudecode"` | Agent to use: `"claudecode"`, `"codex"`, or `"copilotcli"`              |
 | `backend`              | string          | `"builtin"`    | Process backend: `"builtin"` or `"tmux"`                                |
 | `diff_filter`          | string          | `"none"`       | Diff colorizer: `"none"` or `"delta"`                                   |
 | `shell_mode`           | string          | `"suspend"`    | Shell open method: `"suspend"` or `"tmux"`                              |
@@ -143,6 +146,14 @@ Agent-specific options for Codex CLI. All options are optional — when omitted,
 | `sandbox`  | string (option) | —       | Sandbox policy: `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
 | `approval` | string (option) | —       | Approval mode: `"untrusted"`, `"on-request"`, or `"never"`                    |
 | `search`   | bool            | `true`  | Enable web search (`--search`)                                                |
+
+### `[copilotcli]` Section
+
+Agent-specific options for GitHub Copilot CLI. All options are optional — when omitted, no flags are passed to `copilot` and it uses its own configuration (`~/.copilot/config.json`).
+
+| Option | Type            | Default | Description                                               |
+| ------ | --------------- | ------- | --------------------------------------------------------- |
+| `mode` | string (option) | —       | Initial mode: `"interactive"`, `"plan"`, or `"autopilot"` |
 
 ### Auto Mode
 
@@ -299,17 +310,33 @@ Invalid key strings or unknown action names show a warning in the status bar on 
 
 ## Auto-Commit
 
-When `auto_commit` is enabled, copse installs a Stop hook in each worktree. After every agent response, the hook:
+When `auto_commit` is enabled, copse installs a per-agent hook in each worktree. The hook:
 
 1. Stages all changes (`git add -A`)
 2. Skips if there are no staged changes (`git diff --cached --quiet`)
 3. Commits with the message `copse auto-commit`
 
+Each agent uses the closest hook event it supports:
+
+| Agent       | Hook event    | Firing frequency                                                              |
+| ----------- | ------------- | ----------------------------------------------------------------------------- |
+| Claude Code | `Stop`        | Once per agent response                                                       |
+| Codex       | `Stop`        | Once per agent response                                                       |
+| Copilot CLI | `postToolUse` | Once per tool invocation — may produce multiple `copse auto-commit`s per turn |
+
+Copilot CLI has no `Stop`-equivalent event, so `postToolUse` is used to keep the diff view synchronized with the agent's progress during a turn. The extra commits can be squashed at merge time with the `s` (squash) option in the merge confirmation dialog.
+
 The commits ahead count in the Tasks view refreshes every 5 seconds, so you can see new commits appear shortly after they are created.
 
 ## Auto-Permissions
 
-When `auto_permissions` is enabled (Claude Code only), copse pre-approves the following safe commands so the agent does not prompt for confirmation. This option has no effect when using Codex CLI.
+When `auto_permissions` is enabled, copse pre-approves tool / path access so the agent does not prompt for confirmation. The mechanism differs per agent:
+
+- **Claude Code** — installs the allow-list below into `.claude/settings.local.json` (restricted to the worktree for `Edit` / `Write` / `NotebookEdit`) plus sensitive-path deny rules.
+- **Copilot CLI** — passes `--allow-all-tools --allow-all-paths` to the `copilot` invocation (coarser-grained: no per-command allow-list).
+- **Codex CLI** — no effect; use the `[codex]` `sandbox` / `approval` options instead.
+
+The Claude Code allow-list:
 
 | Category        | Commands                                                                                                                                                |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -358,6 +385,8 @@ COPSE_LOG=debug copse
 ## Notification Command
 
 When set, copse configures the agent to run the specified command when it is waiting for user input. For Claude Code, this installs a [Notification hook](https://docs.anthropic.com/en/docs/claude-code/hooks). For Codex CLI, this uses the `notify` configuration.
+
+Copilot CLI does not expose an equivalent hook event (no "waiting for user input" trigger), so `notification_command` is **ignored** when `agent = "copilotcli"`.
 
 Omit the key entirely to disable notifications. Setting `notification_command = ""` is a validation error.
 
@@ -409,20 +438,30 @@ copse writes `.codex/hooks.json` and/or `.codex/config.toml` into each worktree 
 2. **Stop hook** — added when `auto_commit` is enabled (requires `codex_hooks` feature flag)
 3. **Notify setting** — added when `notification_command` is set
 
+### Copilot CLI
+
+copse writes two files into each worktree when `auto_commit` is enabled:
+
+1. **`.github/hooks/copse-hooks.json`** — a `postToolUse` hook that runs the auto-commit command
+2. **`.github/instructions/copse.instructions.md`** — the auto-commit context hint (see below), with `applyTo: "**"` YAML frontmatter
+
+Copilot CLI loads all `.github/hooks/*.json` files and merges them automatically, so copse writes its own file without touching any existing ones. The instructions file uses a copse-specific filename so collisions with project-tracked files are effectively impossible.
+
 ### Auto-commit context hint
 
-When `auto_commit` is enabled, copse also tells the agent what is about to happen so it can plan its own commits without fighting the Stop hook. The same short note is delivered to each agent through its native system-prompt / instructions channel:
+When `auto_commit` is enabled, copse also tells the agent what is about to happen so it can plan its own commits without fighting the auto-commit hook. The same short note is delivered to each agent through its native system-prompt / instructions channel:
 
 - **Claude Code** — launched with `--append-system-prompt "<hint>"`, so the note is layered on top of Claude's default system prompt for the session.
 - **Codex CLI** — copse writes the note to `.codex/copse-instructions.md` inside the worktree and sets `model_instructions_file = "copse-instructions.md"` in `.codex/config.toml` (Codex resolves a relative value against the config.toml directory, so no `.codex/` prefix is needed). If your own `.codex/config.toml` already sets `model_instructions_file`, copse will respect it and skip writing the hint file.
+- **Copilot CLI** — copse writes the note to `.github/instructions/copse.instructions.md` with `applyTo: "**"` YAML frontmatter. Copilot CLI auto-loads files matching `.github/instructions/**/*.instructions.md` alongside any top-level `AGENTS.md`, so the hint applies regardless of which file the agent is working on. The project's own `AGENTS.md` is not touched.
 
-The hint is a brief reminder that a Stop hook will auto-commit leftover changes as `copse auto-commit`, so the agent does not need to run `git commit` itself but can still create its own meaningful commits beforehand.
+The hint is a brief reminder that copse's auto-commit hook will commit leftover changes as `copse auto-commit`, so the agent does not need to run `git commit` itself but can still create its own meaningful commits beforehand.
 
 ### Local ignore for generated files
 
-Whenever copse writes one of the files above (`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`, `.codex/copse-instructions.md`), it also registers that path in the repository's `info/exclude`. This is git's local-only ignore list — it is never committed and does not appear in `git status` or `git diff`. As a result:
+Whenever copse writes one of the files above (`.claude/settings.local.json`, `.codex/hooks.json`, `.codex/config.toml`, `.codex/copse-instructions.md`, `.github/hooks/copse-hooks.json`, `.github/instructions/copse.instructions.md`), it also registers that path in the repository's `info/exclude`. This is git's local-only ignore list — it is never committed and does not appear in `git status` or `git diff`. As a result:
 
-- The `auto_commit` Stop hook (which runs `git add -A`) never sweeps these generated files into a commit.
+- The `auto_commit` hook (which runs `git add -A`) never sweeps these generated files into a commit.
 - Your repository's tracked `.gitignore` is untouched; copse does not require consumers to add rules on their behalf.
 - `info/exclude` lives in the common gitdir (`$GIT_COMMON_DIR/info/exclude`), which is shared across every linked worktree of the same repository. A single write therefore covers all worktrees — handy for copse-managed repos, but worth knowing if you intend to commit one of these paths manually from another worktree.
 

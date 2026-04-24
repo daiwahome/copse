@@ -145,11 +145,34 @@ pub fn render(
         let is_search_match = state.line_matches_search(idx);
         let is_editing = is_cursor && state.is_editing();
 
-        let gutter = gutter_span(line.old_line_no, line.new_line_no, old_w, new_w, gutter_w);
+        // Meta rows (Summary, FileHeader, HunkHeader) span the full terminal
+        // width. Line numbers only appear alongside actual code content.
+        let is_meta = matches!(
+            line.kind,
+            DiffLineKind::Summary | DiffLineKind::FileHeader | DiffLineKind::HunkHeader
+        );
+        let gutter = if is_meta {
+            Span::raw("")
+        } else {
+            gutter_span(line.old_line_no, line.new_line_no, old_w, new_w, gutter_w)
+        };
+        let line_content_width = if is_meta { width } else { content_width };
+
+        // Delta colors content lines (Added/Removed/Context) well, but does not
+        // reliably color FileHeader / HunkHeader lines (they appear white).
+        // Summary rows use our own pre-styled ansi_line.
+        // → Use ansi_line only for Summary and content; always use fallback for
+        //   FileHeader and HunkHeader so our tig-style coloring applies.
+        let use_ansi = line.ansi_line.is_some()
+            && !matches!(
+                line.kind,
+                DiffLineKind::FileHeader | DiffLineKind::HunkHeader
+            );
 
         // Render the diff line itself
-        if let Some(ansi_line) = &line.ansi_line {
-            // Delta-colored rendering
+        if use_ansi {
+            let ansi_line = line.ansi_line.as_ref().unwrap();
+            // Delta-colored rendering (also used for pre-styled Summary rows)
             let mut spans: Vec<Span> = ansi_line.spans.clone();
 
             if is_cursor || is_search_match {
@@ -168,28 +191,45 @@ pub fn render(
 
             // Pad to content width
             let content_len: usize = spans.iter().map(|s| s.content.width()).sum();
-            let pad = content_width.saturating_sub(content_len);
+            let pad = line_content_width.saturating_sub(content_len);
             if pad > 0 {
                 let pad_style = spans.last().map(|s| s.style).unwrap_or_default();
                 spans.push(Span::styled(" ".repeat(pad), pad_style));
             }
 
-            // Prepend gutter
+            // Prepend gutter (empty for meta rows)
             spans.insert(0, gutter);
             lines.push(Line::from(spans));
         } else {
-            // Fallback: original plain-color rendering
+            // Fallback: original plain-color rendering.
+            // FileHeader sub-types get distinct colors (tig-style):
+            //   diff --git  → diff_header (bold)
+            //   index ...   → DarkGray (less prominent)
+            //   --- a/...   → diff_del (red, like removed lines)
+            //   +++ b/...   → diff_add (green, like added lines)
             let (content_style, prefix) = match line.kind {
                 DiffLineKind::Added => (theme.diff_add, "+"),
                 DiffLineKind::Removed => (theme.diff_del, "-"),
                 DiffLineKind::Context => (theme.diff_context, " "),
                 DiffLineKind::HunkHeader => (theme.diff_chunk, ""),
-                DiffLineKind::FileHeader => (theme.diff_header, ""),
+                DiffLineKind::FileHeader => {
+                    let style = if line.content.starts_with("---") {
+                        theme.diff_del
+                    } else if line.content.starts_with("+++") {
+                        theme.diff_add
+                    } else if line.content.starts_with("index ") {
+                        Style::default().fg(Color::DarkGray)
+                    } else {
+                        theme.diff_header
+                    };
+                    (style, "")
+                }
+                DiffLineKind::Summary => (theme.diff_header, ""),
             };
 
             let display_text = if matches!(
                 line.kind,
-                DiffLineKind::HunkHeader | DiffLineKind::FileHeader
+                DiffLineKind::HunkHeader | DiffLineKind::FileHeader | DiffLineKind::Summary
             ) {
                 line.content.clone()
             } else {
@@ -207,7 +247,7 @@ pub fn render(
             };
 
             if is_cursor || is_search_match {
-                let pad = content_width.saturating_sub(display_text.width());
+                let pad = line_content_width.saturating_sub(display_text.width());
                 lines.push(Line::from(vec![
                     gutter,
                     Span::styled(format!("{display_text}{}", " ".repeat(pad)), final_style),

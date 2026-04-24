@@ -57,8 +57,31 @@ fn colorize_with_delta(raw_diff: &str) -> Option<String> {
     // `--dark` suppresses delta's OSC 11 terminal background-color query.
     // Without it, delta writes `ESC]11;?ST` directly to /dev/tty and reads
     // back `ESC]11;rgb:…ST`, which copse (in raw mode) sees as keyboard input.
+    //
+    // Explicit styles are required because delta's defaults use "normal auto"
+    // for minus (= terminal default fg, which is white) and "auto" backgrounds
+    // that don't render well in a ratatui TUI. We want:
+    //   - removed lines: red foreground (no background)
+    //   - added lines:   green foreground (no background)
+    //   - context lines: terminal default (no background)
+    // File/hunk headers are colored by copse's own fallback renderer, so we
+    // suppress delta's styling for those with "normal".
     let mut child = Command::new("delta")
-        .args(["--no-gitconfig", "--color-only", "--dark"])
+        .args([
+            "--no-gitconfig",
+            "--color-only",
+            "--dark",
+            "--minus-style",
+            "red",
+            "--plus-style",
+            "green",
+            "--zero-style",
+            "normal",
+            "--file-style",
+            "normal",
+            "--hunk-header-style",
+            "normal",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

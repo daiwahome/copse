@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use ansi_to_tui::IntoText;
-use ratatui::text::Line;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
 
 use crate::config::DiffFilter;
 use crate::process::CommandLogExt;
@@ -13,6 +14,9 @@ pub enum DiffLineKind {
     Removed,
     HunkHeader,
     FileHeader,
+    /// Synthetic header row prepended to the diff output: lists changed files
+    /// with their `+N -N` counts, tig-style. Not part of the raw git output.
+    Summary,
 }
 
 #[derive(Clone)]
@@ -25,6 +29,9 @@ pub struct DiffLine {
     pub old_line_no: Option<usize>,
     /// New-side file line number (Context/Added lines only)
     pub new_line_no: Option<usize>,
+    /// Target line index for Enter-to-jump (Summary file rows only).
+    /// `None` for all other line kinds.
+    pub jump_target: Option<usize>,
 }
 
 impl std::fmt::Debug for DiffLine {
@@ -35,6 +42,7 @@ impl std::fmt::Debug for DiffLine {
             .field("ansi_line", &self.ansi_line.as_ref().map(|_| "..."))
             .field("old_line_no", &self.old_line_no)
             .field("new_line_no", &self.new_line_no)
+            .field("jump_target", &self.jump_target)
             .finish()
     }
 }
@@ -122,7 +130,121 @@ impl DiffState {
     ) -> anyhow::Result<Self> {
         let raw = get_diff(repo_root, name, upstream)?;
         let colored = diff_filter.colorize(&raw);
-        Ok(Self::parse(&raw, name.to_string(), colored.as_deref()))
+        let mut state = Self::parse(&raw, name.to_string(), colored.as_deref());
+        match get_diff_stat(repo_root, name, upstream) {
+            Ok(stat) => state.prepend_stat_summary(&stat),
+            Err(e) => {
+                // Non-fatal: diff still shows without the summary prefix.
+                log::warn!("git diff --stat failed for task {name}: {e}");
+            }
+        }
+        Ok(state)
+    }
+
+    /// Prepend a tig-style file summary derived from `git diff --stat` output.
+    ///
+    /// Each file line has the form `{path} | {count} {bar}` where the bar
+    /// consists of `+` (added) and `-` (removed) characters, colored green/red.
+    /// The trailing "N files changed…" summary line is shown in DarkGray.
+    /// File rows get a `jump_target` so Enter jumps to the `diff --git` line.
+    fn prepend_stat_summary(&mut self, stat: &str) {
+        let stat_lines: Vec<&str> = stat.lines().collect();
+        if stat_lines.is_empty() {
+            return;
+        }
+
+        // Prefix shape: N stat lines + 1 blank separator.
+        let prefix_len = stat_lines.len() + 1;
+        let mut summary: Vec<DiffLine> = Vec::with_capacity(prefix_len);
+
+        // Build `path → line_index` lookup once (O(M)) so each stat file's
+        // jump_target resolution is O(1) instead of O(M).
+        let path_to_line: std::collections::HashMap<&str, usize> = self
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, l)| {
+                if l.kind != DiffLineKind::FileHeader || !l.content.starts_with("diff --git ") {
+                    return None;
+                }
+                l.content.rsplit_once(" b/").map(|(_, b)| (b, idx))
+            })
+            .collect();
+
+        for &raw in &stat_lines {
+            // Stat file lines: " path/file.rs | 10 ++++++---"
+            // Summary line:    "N files changed, N insertions(+), N deletions(-)"
+            if let Some((left, right)) = raw.split_once(" | ") {
+                // Normalize rename notation (`{old => new}`, `a => b`) to the
+                // post-rename path so we can match the `diff --git ... b/<new>`
+                // header line.
+                let path = stat_new_path(left.trim());
+
+                // O(1) lookup; adjusts for the prefix length added by this fn.
+                let jump_target = path_to_line.get(path.as_str()).map(|&idx| idx + prefix_len);
+
+                // Build colored line. Binary files: right is "Bin N -> M bytes".
+                // Match "Bin " with trailing space to avoid colliding with bar
+                // output that might coincidentally contain the substring.
+                let ansi_line = if right.starts_with("Bin ") {
+                    Line::from(vec![
+                        Span::raw(format!("{left} | ")),
+                        Span::styled(right.to_string(), Style::default().fg(Color::DarkGray)),
+                    ])
+                } else {
+                    // Split right into count prefix and bar ("10 ++++++---").
+                    let bar_start = right.find(['+', '-']).unwrap_or(right.len());
+                    let (count_part, bar_part) = right.split_at(bar_start);
+                    let mut spans = vec![
+                        Span::raw(format!("{left} | ")),
+                        Span::raw(count_part.to_string()),
+                    ];
+                    for ch in bar_part.chars() {
+                        match ch {
+                            '+' => spans.push(Span::styled("+", Style::default().fg(Color::Green))),
+                            '-' => spans.push(Span::styled("-", Style::default().fg(Color::Red))),
+                            other => spans.push(Span::raw(other.to_string())),
+                        }
+                    }
+                    Line::from(spans)
+                };
+
+                summary.push(DiffLine {
+                    kind: DiffLineKind::Summary,
+                    content: raw.to_string(),
+                    ansi_line: Some(ansi_line),
+                    old_line_no: None,
+                    new_line_no: None,
+                    jump_target,
+                });
+            } else {
+                // "N files changed…" summary line or unexpected format.
+                summary.push(DiffLine {
+                    kind: DiffLineKind::Summary,
+                    content: raw.to_string(),
+                    ansi_line: Some(Line::from(Span::styled(
+                        raw.to_string(),
+                        Style::default().fg(Color::DarkGray),
+                    ))),
+                    old_line_no: None,
+                    new_line_no: None,
+                    jump_target: None,
+                });
+            }
+        }
+
+        // Blank separator between the summary and the first `diff --git` line.
+        summary.push(DiffLine {
+            kind: DiffLineKind::Summary,
+            content: String::new(),
+            ansi_line: None,
+            old_line_no: None,
+            new_line_no: None,
+            jump_target: None,
+        });
+
+        summary.extend(std::mem::take(&mut self.lines));
+        self.lines = summary;
     }
 
     /// Parse unified diff text into structured DiffState.
@@ -169,6 +291,7 @@ impl DiffState {
                     ansi_line,
                     old_line_no: None,
                     new_line_no: None,
+                    jump_target: None,
                 });
             } else if raw_line.starts_with("@@") {
                 let (old_start, new_start) = parse_hunk_starts(raw_line);
@@ -180,6 +303,7 @@ impl DiffState {
                     ansi_line,
                     old_line_no: None,
                     new_line_no: None,
+                    jump_target: None,
                 });
             } else if let Some(rest) = raw_line.strip_prefix('+') {
                 let new_no = new_line_counter;
@@ -190,6 +314,7 @@ impl DiffState {
                     ansi_line,
                     old_line_no: None,
                     new_line_no: Some(new_no),
+                    jump_target: None,
                 });
             } else if let Some(rest) = raw_line.strip_prefix('-') {
                 let old_no = old_line_counter;
@@ -200,6 +325,7 @@ impl DiffState {
                     ansi_line,
                     old_line_no: Some(old_no),
                     new_line_no: None,
+                    jump_target: None,
                 });
             } else if let Some(rest) = raw_line.strip_prefix(' ') {
                 let old_no = old_line_counter;
@@ -212,6 +338,7 @@ impl DiffState {
                     ansi_line,
                     old_line_no: Some(old_no),
                     new_line_no: Some(new_no),
+                    jump_target: None,
                 });
             } else {
                 lines.push(DiffLine {
@@ -220,6 +347,7 @@ impl DiffState {
                     ansi_line,
                     old_line_no: None,
                     new_line_no: None,
+                    jump_target: None,
                 });
             }
         }
@@ -604,7 +732,9 @@ impl DiffState {
                     DiffLineKind::Added => "+",
                     DiffLineKind::Removed => "-",
                     DiffLineKind::Context => " ",
-                    DiffLineKind::HunkHeader | DiffLineKind::FileHeader => "",
+                    DiffLineKind::HunkHeader | DiffLineKind::FileHeader | DiffLineKind::Summary => {
+                        ""
+                    }
                 };
                 let marker = if i == comment.line_index {
                     " // <-- comment"
@@ -659,9 +789,42 @@ fn parse_hunk_starts(hunk_header: &str) -> (usize, usize) {
     (parse_start('-'), parse_start('+'))
 }
 
+/// Extract the post-rename "new" path from a `git diff --stat` path column.
+///
+/// `git diff --stat` collapses renames into one of two notations:
+///   - brace substitution: `src/{old => new}.rs`, `{old_dir => new_dir}/file.rs`
+///   - full-path arrow:    `src/old.rs => src/new.rs` (no common prefix/suffix)
+///
+/// Plain paths pass through unchanged. The result is used to match the stat
+/// row against the `diff --git a/... b/<new>` line for `jump_target` resolution.
+fn stat_new_path(stat_path: &str) -> String {
+    // Brace notation: replace `{old => new}` with `new` in place.
+    if let Some(brace_start) = stat_path.find('{') {
+        if let Some(rel_end) = stat_path[brace_start..].find('}') {
+            let brace_end = brace_start + rel_end;
+            let inner = &stat_path[brace_start + 1..brace_end];
+            if let Some((_old, new)) = inner.split_once(" => ") {
+                let mut out = String::with_capacity(stat_path.len());
+                out.push_str(&stat_path[..brace_start]);
+                out.push_str(new);
+                out.push_str(&stat_path[brace_end + 1..]);
+                return out;
+            }
+        }
+    }
+    // Full-path arrow: "old => new" with no common prefix/suffix.
+    if let Some((_, new)) = stat_path.split_once(" => ") {
+        return new.to_string();
+    }
+    stat_path.to_string()
+}
+
 /// Check if a diff line's display content matches a search pattern.
+/// Summary rows (the tig-style file list prefix) are never search matches —
+/// `/search` targets code and hunk/file headers only.
 fn line_matches(line: &DiffLine, needle: &str, anchored: bool) -> bool {
     let display = match line.kind {
+        DiffLineKind::Summary => return false,
         DiffLineKind::Added => format!("+{}", line.content),
         DiffLineKind::Removed => format!("-{}", line.content),
         DiffLineKind::Context => format!(" {}", line.content),
@@ -684,6 +847,23 @@ pub fn get_diff(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<
     if !output.status.success() {
         anyhow::bail!(
             "git diff failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Run `git diff --stat <upstream>..<branch>` and return the raw output.
+/// Lines have the form ` {path} | {count} {bar}` plus a summary line.
+pub fn get_diff_stat(repo_root: &Path, name: &str, upstream: &str) -> anyhow::Result<String> {
+    let branch = format!("copse/{name}");
+    let output = std::process::Command::new("git")
+        .args(["diff", "--stat", &format!("{upstream}..{branch}")])
+        .current_dir(repo_root)
+        .run_output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git diff --stat failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
@@ -752,36 +932,44 @@ diff --git a/src/bar.rs b/src/bar.rs
     #[test]
     fn line_numbers_simple_diff() {
         let state = make_state(SIMPLE_DIFF);
+        // The summary prefix pushes the first file header down; derive all
+        // indices relative to the first `diff --git` line so the test stays
+        // robust to prefix changes.
+        let fh = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::FileHeader)
+            .unwrap();
         // First file: @@ -1,3 +1,4 @@ → counters start at old=1, new=1
-        //  idx 0-2: FileHeaders (no line numbers)
-        //  idx 3:   HunkHeader  (no line numbers)
-        //  idx 4:   Context " use std::io;"   → old=1, new=1
-        //  idx 5:   Added   "+use std::fs;"   →        new=2
-        //  idx 6:   Context " fn main() {"    → old=2, new=3
-        //  idx 7:   Removed "-  println..."   → old=3
-        //  idx 8:   Added   "+  println..."   →        new=4
-        //  idx 9:   Context " }"              → old=4, new=5
+        //  fh+0..fh+2: FileHeaders (no line numbers)
+        //  fh+3:       HunkHeader  (no line numbers)
+        //  fh+4:       Context " use std::io;"   → old=1, new=1
+        //  fh+5:       Added   "+use std::fs;"   →        new=2
+        //  fh+6:       Context " fn main() {"    → old=2, new=3
+        //  fh+7:       Removed "-  println..."   → old=3
+        //  fh+8:       Added   "+  println..."   →        new=4
+        //  fh+9:       Context " }"              → old=4, new=5
 
-        assert_eq!(state.lines[0].old_line_no, None);
-        assert_eq!(state.lines[3].old_line_no, None);
+        assert_eq!(state.lines[fh].old_line_no, None);
+        assert_eq!(state.lines[fh + 3].old_line_no, None);
 
-        assert_eq!(state.lines[4].old_line_no, Some(1));
-        assert_eq!(state.lines[4].new_line_no, Some(1));
+        assert_eq!(state.lines[fh + 4].old_line_no, Some(1));
+        assert_eq!(state.lines[fh + 4].new_line_no, Some(1));
 
-        assert_eq!(state.lines[5].old_line_no, None);
-        assert_eq!(state.lines[5].new_line_no, Some(2));
+        assert_eq!(state.lines[fh + 5].old_line_no, None);
+        assert_eq!(state.lines[fh + 5].new_line_no, Some(2));
 
-        assert_eq!(state.lines[6].old_line_no, Some(2));
-        assert_eq!(state.lines[6].new_line_no, Some(3));
+        assert_eq!(state.lines[fh + 6].old_line_no, Some(2));
+        assert_eq!(state.lines[fh + 6].new_line_no, Some(3));
 
-        assert_eq!(state.lines[7].old_line_no, Some(3));
-        assert_eq!(state.lines[7].new_line_no, None);
+        assert_eq!(state.lines[fh + 7].old_line_no, Some(3));
+        assert_eq!(state.lines[fh + 7].new_line_no, None);
 
-        assert_eq!(state.lines[8].old_line_no, None);
-        assert_eq!(state.lines[8].new_line_no, Some(4));
+        assert_eq!(state.lines[fh + 8].old_line_no, None);
+        assert_eq!(state.lines[fh + 8].new_line_no, Some(4));
 
-        assert_eq!(state.lines[9].old_line_no, Some(4));
-        assert_eq!(state.lines[9].new_line_no, Some(5));
+        assert_eq!(state.lines[fh + 9].old_line_no, Some(4));
+        assert_eq!(state.lines[fh + 9].new_line_no, Some(5));
     }
 
     #[test]
@@ -1329,24 +1517,40 @@ diff --git a/src/foo.rs b/src/foo.rs
         // In unified diff, blank context lines are represented as " " (single space).
         let dup_diff = "diff --git a/src/x.rs b/src/x.rs\n--- a/src/x.rs\n+++ b/src/x.rs\n@@ -1,5 +1,5 @@\n \n fn a() {}\n \n fn b() {}\n \n";
         let mut state = make_state(dup_diff);
-        // Lines: [FileHeader(diff --git), FileHeader(---), FileHeader(+++),
-        //         HunkHeader(@@), Context(blank), Context(fn a), Context(blank),
-        //         Context(fn b), Context(blank)]
-        assert_eq!(state.lines[4].kind, DiffLineKind::Context);
-        assert_eq!(state.lines[4].content, "");
-        assert_eq!(state.lines[6].kind, DiffLineKind::Context);
-        assert_eq!(state.lines[6].content, "");
-        assert_eq!(state.lines[8].kind, DiffLineKind::Context);
-        assert_eq!(state.lines[8].content, "");
-        // Cursor on the second blank context line (index 6, between fn a and fn b)
-        state.cursor = 6;
+        // Layout after summary prefix:
+        //   summary header (bold)
+        //   summary file row (src/x.rs +0 -0)
+        //   summary blank
+        //   FileHeader(diff --git) ← fh
+        //   FileHeader(---)         ← fh+1
+        //   FileHeader(+++)         ← fh+2
+        //   HunkHeader(@@)          ← fh+3
+        //   Context(blank)          ← fh+4
+        //   Context(fn a)           ← fh+5
+        //   Context(blank)          ← fh+6
+        //   Context(fn b)           ← fh+7
+        //   Context(blank)          ← fh+8
+        let fh = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::FileHeader)
+            .unwrap();
+        assert_eq!(state.lines[fh + 4].kind, DiffLineKind::Context);
+        assert_eq!(state.lines[fh + 4].content, "");
+        assert_eq!(state.lines[fh + 6].kind, DiffLineKind::Context);
+        assert_eq!(state.lines[fh + 6].content, "");
+        assert_eq!(state.lines[fh + 8].kind, DiffLineKind::Context);
+        assert_eq!(state.lines[fh + 8].content, "");
+        // Cursor on the second blank context line (between fn a and fn b)
+        let cursor_idx = fh + 6;
+        state.cursor = cursor_idx;
 
         let saved = state.save_state();
         let mut new_state = make_state(dup_diff);
         new_state.restore_state(&saved);
 
-        // Should pick the blank context line closest to the original index 6
-        assert_eq!(new_state.cursor, 6);
+        // Should pick the blank context line closest to the original cursor
+        assert_eq!(new_state.cursor, cursor_idx);
     }
 
     #[test]
@@ -1391,18 +1595,168 @@ diff --git a/src/foo.rs b/src/foo.rs
 
         assert_eq!(map.len(), state.lines.len());
 
+        // Summary prefix lines precede any FileHeader → path is <unknown>.
+        let first_foo_idx = state
+            .lines
+            .iter()
+            .position(|l| l.kind == DiffLineKind::FileHeader)
+            .unwrap();
+        for (i, entry) in map.iter().enumerate().take(first_foo_idx) {
+            assert_eq!(entry, "<unknown>", "summary line {i} should be unknown");
+        }
+
         // All lines in the first file section should be "src/foo.rs"
         let first_bar_idx = state
             .lines
             .iter()
             .position(|l| l.kind == DiffLineKind::FileHeader && l.content.contains("b/src/bar.rs"))
             .unwrap();
-        for i in 0..first_bar_idx {
+        for i in first_foo_idx..first_bar_idx {
             assert_eq!(map[i], "src/foo.rs", "line {i} should be src/foo.rs");
         }
         // Lines from bar.rs header onward
         for i in first_bar_idx..map.len() {
             assert_eq!(map[i], "src/bar.rs", "line {i} should be src/bar.rs");
         }
+    }
+
+    // -- prepend_stat_summary --
+
+    /// Fixture: `git diff --stat` output matching SIMPLE_DIFF.
+    /// foo.rs: 3 lines changed (+2/-1), bar.rs: 1 line changed (+1/-0).
+    const SIMPLE_STAT: &str =
+        " src/foo.rs | 3 ++-\n src/bar.rs | 1 +\n 2 files changed, 3 insertions(+), 1 deletion(-)\n";
+
+    #[test]
+    fn stat_summary_prepended_with_correct_content() {
+        let mut state = make_state(SIMPLE_DIFF);
+        state.prepend_stat_summary(SIMPLE_STAT);
+
+        // 2 file rows + 1 summary line + 1 blank separator.
+        let summary: Vec<&DiffLine> = state
+            .lines
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Summary)
+            .collect();
+        assert_eq!(summary.len(), 4);
+
+        assert!(summary[0].content.contains("src/foo.rs"));
+        assert!(summary[1].content.contains("src/bar.rs"));
+        assert!(summary[2].content.contains("files changed"));
+        assert!(summary[3].content.is_empty());
+    }
+
+    #[test]
+    fn stat_summary_jump_targets_point_to_file_headers() {
+        let mut state = make_state(SIMPLE_DIFF);
+        state.prepend_stat_summary(SIMPLE_STAT);
+
+        let summary: Vec<&DiffLine> = state
+            .lines
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Summary)
+            .collect();
+
+        // "files changed" and blank separator have no jump target
+        assert_eq!(summary[2].jump_target, None);
+        assert_eq!(summary[3].jump_target, None);
+
+        let foo_target = summary[0].jump_target.expect("foo row has jump target");
+        assert_eq!(state.lines[foo_target].kind, DiffLineKind::FileHeader);
+        assert!(state.lines[foo_target]
+            .content
+            .starts_with("diff --git a/src/foo.rs"));
+
+        let bar_target = summary[1].jump_target.expect("bar row has jump target");
+        assert_eq!(state.lines[bar_target].kind, DiffLineKind::FileHeader);
+        assert!(state.lines[bar_target]
+            .content
+            .starts_with("diff --git a/src/bar.rs"));
+    }
+
+    #[test]
+    fn stat_summary_absent_when_empty() {
+        let mut state = make_state("");
+        state.prepend_stat_summary("");
+        assert!(state.lines.iter().all(|l| l.kind != DiffLineKind::Summary));
+    }
+
+    // -- stat_new_path --
+
+    #[test]
+    fn stat_new_path_plain_passthrough() {
+        assert_eq!(stat_new_path("src/foo.rs"), "src/foo.rs");
+    }
+
+    #[test]
+    fn stat_new_path_brace_suffix_rename() {
+        // e.g. `src/{old => new}.rs` → `src/new.rs`
+        assert_eq!(stat_new_path("src/{old => new}.rs"), "src/new.rs");
+    }
+
+    #[test]
+    fn stat_new_path_brace_directory_rename() {
+        // e.g. `{old_dir => new_dir}/file.rs` → `new_dir/file.rs`
+        assert_eq!(
+            stat_new_path("{old_dir => new_dir}/file.rs"),
+            "new_dir/file.rs"
+        );
+    }
+
+    #[test]
+    fn stat_new_path_full_arrow_rename() {
+        // e.g. `src/old.rs => new/dir/other.rs` (no common prefix/suffix)
+        assert_eq!(
+            stat_new_path("src/old.rs => new/dir/other.rs"),
+            "new/dir/other.rs"
+        );
+    }
+
+    #[test]
+    fn stat_new_path_brace_empty_old() {
+        // Directory added: `dir/{ => added}/file.rs` → `dir/added/file.rs`
+        assert_eq!(
+            stat_new_path("dir/{ => added}/file.rs"),
+            "dir/added/file.rs"
+        );
+    }
+
+    // -- rename jump_target integration --
+
+    #[test]
+    fn stat_summary_jump_target_resolves_renamed_file() {
+        // Diff renames src/foo.rs → src/bar.rs with one added line.
+        let rename_diff = "\
+diff --git a/src/foo.rs b/src/bar.rs
+similarity index 90%
+rename from src/foo.rs
+rename to src/bar.rs
+--- a/src/foo.rs
++++ b/src/bar.rs
+@@ -1,1 +1,2 @@
+ fn x() {}
++fn y() {}
+";
+        // git's stat output for this kind of rename uses brace notation.
+        let stat = " src/{foo => bar}.rs | 1 +\n 1 file changed, 1 insertion(+)\n";
+
+        let mut state = make_state(rename_diff);
+        state.prepend_stat_summary(stat);
+
+        let summary: Vec<&DiffLine> = state
+            .lines
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Summary)
+            .collect();
+
+        // First summary row is the renamed file; must have a jump target
+        // pointing at the `diff --git a/src/foo.rs b/src/bar.rs` line.
+        let target = summary[0]
+            .jump_target
+            .expect("renamed file row should still resolve jump_target");
+        assert_eq!(state.lines[target].kind, DiffLineKind::FileHeader);
+        assert!(state.lines[target]
+            .content
+            .starts_with("diff --git a/src/foo.rs b/src/bar.rs"));
     }
 }

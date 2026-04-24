@@ -81,31 +81,32 @@ When an agent is also open, the layout becomes `[Diff | Agent]`: diff on the lef
 
 ### Key Bindings (Diff pane)
 
-| Key       | Action                                                |
-| --------- | ----------------------------------------------------- |
-| `j` / `↓` | Move cursor down                                      |
-| `k` / `↑` | Move cursor up                                        |
-| `Ctrl-b`  | Scroll up one page                                    |
-| `Ctrl-f`  | Scroll down one page                                  |
-| `Ctrl-u`  | Scroll up half page                                   |
-| `Ctrl-d`  | Scroll down half page                                 |
-| `/`       | Open search dialog (enter pattern, `Enter` to search) |
-| `n`       | Next search match                                     |
-| `N`       | Previous search match                                 |
-| `@`       | Jump to next hunk (sets pattern to `^@@`)             |
-| `g`       | Jump to top                                           |
-| `G`       | Jump to bottom                                        |
-| `R`       | Refresh diff (preserves cursor position and comments) |
-| `O`       | Toggle split ↔ fullscreen                             |
-| `q`       | Close diff view (state is restored on reopen)         |
-| `o`       | Add review comment on current line (inline editing)   |
-| `e`       | Edit existing review comment                          |
-| `!`       | Delete review comment on current line                 |
-| `c`       | Jump to next comment (then `n`/`N` to navigate)       |
-| `S`       | Send all comments to agent (opens preview dialog)     |
-| `Ctrl-s`  | Confirm comment (while editing)                       |
-| `Esc`     | Cancel comment editing                                |
-| `Ctrl-g`  | Show help dialog                                      |
+| Key       | Action                                                       |
+| --------- | ------------------------------------------------------------ |
+| `j` / `↓` | Move cursor down                                             |
+| `k` / `↑` | Move cursor up                                               |
+| `Ctrl-b`  | Scroll up one page                                           |
+| `Ctrl-f`  | Scroll down one page                                         |
+| `Ctrl-u`  | Scroll up half page                                          |
+| `Ctrl-d`  | Scroll down half page                                        |
+| `/`       | Open search dialog (enter pattern, `Enter` to search)        |
+| `n`       | Next search match                                            |
+| `N`       | Previous search match                                        |
+| `@`       | Jump to next hunk (sets pattern to `^@@`)                    |
+| `g`       | Jump to top                                                  |
+| `G`       | Jump to bottom                                               |
+| `Enter`   | On a summary row, jump to that file's diff (no-op elsewhere) |
+| `R`       | Refresh diff (preserves cursor position and comments)        |
+| `O`       | Toggle split ↔ fullscreen                                    |
+| `q`       | Close diff view (state is restored on reopen)                |
+| `o`       | Add review comment on current line (inline editing)          |
+| `e`       | Edit existing review comment                                 |
+| `!`       | Delete review comment on current line                        |
+| `c`       | Jump to next comment (then `n`/`N` to navigate)              |
+| `S`       | Send all comments to agent (opens preview dialog)            |
+| `Ctrl-s`  | Confirm comment (while editing)                              |
+| `Esc`     | Cancel comment editing                                       |
+| `Ctrl-g`  | Show help dialog                                             |
 
 When no search pattern is set, `n`/`N` default to hunk navigation (same as `@`). After pressing `c`, `n`/`N` navigate between commented lines instead.
 

@@ -50,6 +50,7 @@ pub enum DiffAction {
     NextComment,
     GoToTop,
     GoToBottom,
+    JumpToFile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -338,6 +339,7 @@ fn diff_action_defs() -> &'static [ActionDef<DiffAction>] {
         "next-comment", "Jump to next comment" => DiffAction::NextComment, ["c"];
         "go-to-top", "Jump to top" => DiffAction::GoToTop, ["g"];
         "go-to-bottom", "Jump to bottom" => DiffAction::GoToBottom, ["G"];
+        "jump-to-file", "Jump to file (on summary row)" => DiffAction::JumpToFile, ["Enter"];
     }
 }
 

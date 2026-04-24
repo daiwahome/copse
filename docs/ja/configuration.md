@@ -101,6 +101,7 @@ send-review = ["S"]
 next-comment = ["c"]
 go-to-top = ["g"]
 go-to-bottom = ["G"]
+jump-to-file = ["Enter"]
 
 [keys.agent]
 fullscreen = ["Ctrl-O"]

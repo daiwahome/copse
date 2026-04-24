@@ -1421,6 +1421,20 @@ impl App {
                     state.ensure_cursor_visible(page_height);
                 }
             }
+            DiffAction::JumpToFile => {
+                if let Some(state) = self.diff_state_mut() {
+                    if let Some(target) = state.lines.get(state.cursor).and_then(|l| l.jump_target)
+                    {
+                        // Place the target at the top of the viewport so the
+                        // file's `diff --git` header is the first visible line.
+                        // `ensure_cursor_visible` is a safety net for edge cases
+                        // (e.g. viewport can't fit the row at current offset).
+                        state.cursor = target;
+                        state.scroll_offset = target;
+                        state.ensure_cursor_visible(page_height);
+                    }
+                }
+            }
         }
         Ok(())
     }
